@@ -1,0 +1,19 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.vscode/
+*.pyc
+
+# Data / models / outputs
+*.csv
+*.keras
+*.h5
+*.pkl
+*.joblib
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
