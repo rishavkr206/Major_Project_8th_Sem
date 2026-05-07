@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 .venv/
@@ -17,4 +17,3 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
-Major Project/
