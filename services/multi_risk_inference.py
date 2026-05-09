@@ -12,7 +12,16 @@ import warnings
 warnings.filterwarnings('ignore')
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import tensorflow as tf
+
+# Lazy-import tensorflow so this module can be imported in environments where
+# TF is not installed (e.g. CI with a minimal dependency set). `load()` will
+# fail gracefully with a helpful error if TF is missing at runtime.
+try:  # pragma: no cover - import guard
+    import tensorflow as tf  # type: ignore
+    _TF_IMPORT_ERROR = None
+except Exception as _exc:  # noqa: BLE001
+    tf = None  # type: ignore
+    _TF_IMPORT_ERROR = f"tensorflow not installed: {_exc}"
 
 # Navigate from services/ to repo root to ml/multi_risk/
 SERVICES_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -52,6 +61,8 @@ class MultiRiskInferenceEngine:
     @staticmethod
     def _create_focal_loss(gamma=1.5, alpha=0.8):
         """Create focal loss function for loading (for legacy models)."""
+        if tf is None:
+            raise RuntimeError(_TF_IMPORT_ERROR or "tensorflow not installed")
         def loss(y_true, y_pred):
             y_true = tf.cast(y_true, tf.float32)
             y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)
@@ -63,6 +74,9 @@ class MultiRiskInferenceEngine:
         
     def load(self) -> bool:
         """Load model and scaling artifacts."""
+        if tf is None:
+            print(f"[ERR] {_TF_IMPORT_ERROR}")
+            return False
         try:
             # Load model
             if not os.path.exists(self.model_path):

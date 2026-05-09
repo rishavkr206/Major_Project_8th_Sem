@@ -32,6 +32,9 @@ on:
 jobs:
   twin-gate:
     runs-on: ubuntu-latest
+    env:
+      # Silence the Node 20 deprecation warning by forcing JS actions to Node 24.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,14 +45,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy pandas "fastapi==0.115.0" "starlette>=0.37.2,<0.39.0" uvicorn httpx prometheus-client scikit-learn
 
-      - name: Run tests
-        run: python -m unittest discover -s tests -p "test_*.py"
+      # Run only the tests this gate is responsible for. Heavier tests
+      # (test_multi_risk, test_ppo_training_smoke, test_chain_anchor) need
+      # tensorflow / stable-baselines3 / web3 and are excluded from the gate.
+      - name: Run twin gate tests
+        run: |
+          python -m unittest             tests.test_digital_twin_replay             tests.test_digital_twin_safety             tests.test_simulator_api
 
       - name: Generate synthetic Phase-1 dataset (fallback for benchmark)
         run: python pipelines/run_phase1.py
