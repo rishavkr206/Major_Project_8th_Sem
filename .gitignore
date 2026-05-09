@@ -68,5 +68,10 @@ temp/
 
 # Claude / tooling
 .code-review-graph/
-.claude/scheduled_tasks.lock
-.claude/settings.local.json
+.claude/
+.mcp.json
+.opencode.json
+.cursor/
+
+# Legacy nested project folder (kept locally for data/venv, not for git)
+/Major Project/
