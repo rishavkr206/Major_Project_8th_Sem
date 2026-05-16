@@ -1,0 +1,7 @@
+{
+  "next_spo2_mae": 1.5302,
+  "next_spo2_rmse": 2.5499,
+  "hypoxia_auroc": 0.8733,
+  "hypoxia_avg_prec": 0.4547,
+  "hypoxia_f1_thresh05": 0.3754
+}

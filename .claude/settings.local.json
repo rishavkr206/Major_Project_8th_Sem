@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(python -c \"import pandas as pd; df = pd.read_csv\\('clean_full_data_v2.csv', usecols=['stay_id','charttime','SpO2','PEEP','FiO2','TidalVol','HR','MAP','RespRate'], nrows=200000\\); print\\('rows:', len\\(df\\)\\); print\\('cols:', list\\(df.columns\\)\\); print\\('unique stays in sample:', df['stay_id'].nunique\\(\\)\\); g = df.groupby\\('stay_id'\\).size\\(\\); print\\('rows-per-stay \\(sample\\) min/median/max:', int\\(g.min\\(\\)\\), int\\(g.median\\(\\)\\), int\\(g.max\\(\\)\\)\\)\")",
-      "Bash(python pipelines/run_phase1.py)"
+      "Bash(python pipelines/run_phase1.py)",
+      "Bash(python pipelines/multi_risk_features.py)",
+      "Bash(python ml/multi_risk_training.py)",
+      "Bash(tee /tmp/multi_risk_train.log)"
     ]
   }
 }

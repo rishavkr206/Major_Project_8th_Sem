@@ -17,3 +17,5 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
+# Added by code-review-graph
+.code-review-graph/

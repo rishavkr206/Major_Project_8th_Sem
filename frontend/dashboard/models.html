@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventilator OS - Model Metrics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+    <div id="nav"></div>
+    <main class="page">
+        <section class="page-header">
+            <div>
+                <div class="eyebrow">Evaluation center</div>
+                <h1>Accuracy & Model Evaluation</h1>
+                <p class="lede">Review saved evaluation metrics for the dual-head LSTM and the multi-risk LSTM, including MAE, RMSE, AUROC, AUC-PR, F1, and selected thresholds.</p>
+            </div>
+            <div class="toolbar">
+                <button id="refresh" class="button"><i class="fas fa-rotate"></i> Refresh</button>
+                <a class="button secondary" href="tests.html"><i class="fas fa-flask-vial"></i> Scenario Cases</a>
+            </div>
+        </section>
+
+        <section id="overview" class="grid cols-4"></section>
+        <section id="metrics" class="section-stack" style="margin-top:16px;"></section>
+    </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+const { nav, apiGet, num } = window.VentilatorApp;
+document.getElementById("nav").innerHTML = nav("models");
+
+function metricCard(label, value, note, cls = "") {
+    return `<div class="panel metric"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}</div><div class="metric-note">${note}</div></div>`;
+}
+
+function rowsFor(prefix, report, metrics) {
+    return metrics.map(metric => {
+        const key = `${prefix}_${metric}`;
+        return `<tr><td>${metric.toUpperCase()}</td><td>${num(report[key], 4)}</td></tr>`;
+    }).join("");
+}
+
+function renderMultiRisk(report) {
+    const regressionTargets = ["Next_SpO2", "Next_HR", "Next_MAP", "Next_RespRate", "Next_TidalVol"];
+    const riskTargets = ["Hypoxia_Risk", "Tachycardia_Risk", "Hypotension_Risk", "Tachypnea_Risk", "VILI_Risk", "Shock_Risk"];
+    return `
+    <article class="panel">
+        <h2 class="panel-title">Multi-Risk LSTM Outputs</h2>
+        <div class="grid cols-2">
+            <div>
+                <h3 class="panel-title">Regression Metrics</h3>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Prediction Head</th><th>MAE</th><th>RMSE</th></tr></thead>
+                        <tbody>
+                            ${regressionTargets.map(t => `<tr><td>${t}</td><td>${num(report[`${t}_mae`], 4)}</td><td>${num(report[`${t}_rmse`], 4)}</td></tr>`).join("")}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div>
+                <h3 class="panel-title">Classification Metrics</h3>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Risk Head</th><th>AUROC</th><th>AUC-PR</th><th>F1 @ 0.5</th><th>Best F1</th><th>Threshold</th></tr></thead>
+                        <tbody>
+                            ${riskTargets.map(t => `<tr>
+                                <td>${t}</td>
+                                <td>${num(report[`${t}_auroc`], 4)}</td>
+                                <td>${num(report[`${t}_auc_pr`], 4)}</td>
+                                <td>${num(report[`${t}_f1_thresh05`], 4)}</td>
+                                <td>${num(report[`${t}_f1_optimal`], 4)}</td>
+                                <td>${num(report[`${t}_optimal_threshold`], 2)}</td>
+                            </tr>`).join("")}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </article>`;
+}
+
+function renderDualHead(report) {
+    return `
+    <article class="panel">
+        <h2 class="panel-title">Dual-Head LSTM</h2>
+        <div class="grid cols-2">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>SpO2 Regression</th><th>Value</th></tr></thead>
+                    <tbody>
+                        <tr><td>Next SpO2 MAE</td><td>${num(report.next_spo2_mae, 4)}</td></tr>
+                        <tr><td>Next SpO2 RMSE</td><td>${num(report.next_spo2_rmse, 4)}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Hypoxia Classification</th><th>Value</th></tr></thead>
+                    <tbody>
+                        <tr><td>AUROC</td><td>${num(report.hypoxia_auroc, 4)}</td></tr>
+                        <tr><td>Average Precision</td><td>${num(report.hypoxia_avg_prec, 4)}</td></tr>
+                        <tr><td>F1 @ 0.5</td><td>${num(report.hypoxia_f1_thresh05, 4)}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </article>`;
+}
+
+async function loadMetrics() {
+    document.getElementById("metrics").innerHTML = `<div class="panel muted"><i class="fas fa-spinner fa-spin"></i> Loading evaluation reports...</div>`;
+    const data = await apiGet("/model/evaluation");
+    const dual = data.reports.lstm_dual_head || {};
+    const multi = data.reports.multi_risk_lstm || {};
+    document.getElementById("overview").innerHTML = `
+        ${metricCard("SpO2 MAE", num(dual.next_spo2_mae, 3), "Dual-head LSTM regression error")}
+        ${metricCard("SpO2 RMSE", num(dual.next_spo2_rmse, 3), "Dual-head LSTM regression spread")}
+        ${metricCard("Hypoxia AUROC", num(dual.hypoxia_auroc, 3), "Dual-head classifier", "good")}
+        ${metricCard("Best VILI F1", num(multi.VILI_Risk_f1_optimal, 3), "Multi-risk classifier", "good")}
+    `;
+    document.getElementById("metrics").innerHTML = renderDualHead(dual) + renderMultiRisk(multi);
+}
+
+document.getElementById("refresh").addEventListener("click", loadMetrics);
+loadMetrics().catch(err => {
+    document.getElementById("metrics").innerHTML = `<div class="panel bad">Could not load metrics: ${err.message}</div>`;
+});
+</script>
+</body>
+</html>

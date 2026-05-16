@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Ventilator
+    orgId: 1
+    folder: Ventilator
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/dashboards
