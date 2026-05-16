@@ -15,6 +15,8 @@ Model basis:
 import numpy as np
 from typing import Dict, List, Optional
 
+from services.weather import WeatherState
+
 # ─── Safety Bounds ────────────────────────────────────────────────────────────
 SAFE_BOUNDS = {
     'PEEP':     (3.0,  20.0),   # cmH2O
@@ -77,15 +79,23 @@ class DigitalTwin:
         FiO2: float,
         TidalVol: float,
         current_spo2: float,
+        weather: Optional[WeatherState] = None,
     ) -> float:
         """
         Predict equilibrium SpO2 given ventilator settings.
         Uses simplified ALI/ARDS-inspired response model.
+
+        When `weather` is supplied, the FiO2 contribution is scaled by the
+        weather's `fio2_efficiency()` (pressure-driven) and an additive
+        `spo2_baseline_penalty()` is subtracted from the equilibrium target
+        (heat / humidity). See services/weather.py for derivation.
         """
         # FiO2 and PEEP are modeled as changes from calibrated baseline settings.
         fio2_delta = FiO2 - self.last_FiO2
         peep_delta = PEEP - self.last_PEEP
-        fio2_contribution = fio2_delta * FIO2_SPO2_COEF * self.compliance_factor
+        fio2_efficiency = weather.fio2_efficiency() if weather is not None else 1.0
+        weather_penalty = weather.spo2_baseline_penalty() if weather is not None else 0.0
+        fio2_contribution = fio2_delta * FIO2_SPO2_COEF * self.compliance_factor * fio2_efficiency
         peep_contribution = peep_delta * PEEP_SPO2_COEF * self.compliance_factor
 
         # TidalVol penalty (VILI above optimal)
@@ -93,7 +103,13 @@ class DigitalTwin:
         tv_penalty = tv_delta * TV_PENALTY_HIGH
 
         # Target equilibrium SpO2 anchored to calibrated baseline.
-        spo2_target = self.baseline_spo2 + fio2_contribution + peep_contribution - tv_penalty
+        spo2_target = (
+            self.baseline_spo2
+            + fio2_contribution
+            + peep_contribution
+            - tv_penalty
+            - weather_penalty
+        )
         spo2_target = np.clip(spo2_target, 60.0, 100.0)
 
         # Mean reversion from current value
@@ -107,6 +123,7 @@ class DigitalTwin:
         steps: int = 4,
         noise_scale: float = 1.0,
         rng: Optional[np.random.Generator] = None,
+        weather: Optional[WeatherState] = None,
     ) -> Dict:
         """
         Run what-if simulation for proposed ventilator changes.
@@ -117,9 +134,13 @@ class DigitalTwin:
             steps:       number of 15-min steps to simulate (default=4 = 1 hour)
             noise_scale: multiplicative factor for uncertainty noise (0 disables noise)
             rng:         optional numpy random generator for deterministic replay tests
+            weather:     optional WeatherState that modulates effective FiO2
+                         contribution (via pressure) and adds a small SpO2 baseline
+                         penalty (heat / humidity). When None, no weather effect.
 
         Returns:
-            dict with trajectory, mean, uncertainty, delta, risk_flag
+            dict with trajectory, mean, uncertainty, delta, risk_flag, and
+            weather summary (when weather was supplied).
         """
         if steps < 1:
             raise ValueError("steps must be >= 1")
@@ -136,7 +157,7 @@ class DigitalTwin:
         generator = rng if rng is not None else np.random.default_rng()
 
         for _ in range(steps):
-            spo2_now = self._spo2_from_settings(PEEP, FiO2, TidalVol, spo2_now)
+            spo2_now = self._spo2_from_settings(PEEP, FiO2, TidalVol, spo2_now, weather=weather)
             # Add calibration noise
             noise = float(generator.normal(0, self.uncertainty * 0.3 * noise_scale))
             trajectory.append(round(float(np.clip(spo2_now + noise, 60, 100)), 2))
@@ -150,7 +171,7 @@ class DigitalTwin:
         risk_flag   = mean_spo2 < 90.0
         tv_risk     = TidalVol > 600.0   # high tidal volume warning
 
-        return {
+        result: Dict = {
             'trajectory':   trajectory,
             'upper_band':   upper_band,
             'lower_band':   lower_band,
@@ -165,6 +186,15 @@ class DigitalTwin:
                 'TidalVol': round(TidalVol, 1),
             }
         }
+        if weather is not None:
+            result['weather'] = {
+                'temperature_c':  round(weather.temperature_c, 2),
+                'humidity_pct':   round(weather.humidity_pct, 2),
+                'pressure_hpa':   round(weather.pressure_hpa, 2),
+                'fio2_efficiency':         round(weather.fio2_efficiency(), 4),
+                'spo2_baseline_penalty':   round(weather.spo2_baseline_penalty(), 3),
+            }
+        return result
 
     def current_settings_as_baseline(self) -> Dict:
         """Return current (last calibrated) settings as baseline for comparison."""

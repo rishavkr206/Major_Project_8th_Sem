@@ -50,6 +50,18 @@ PROFILE_BASELINES: Dict[str, Dict[str, float]] = {
         "FiO2": 78.0,
         "TidalVol": 420.0,
     },
+    # Bacterial / viral pneumonia with consolidative infiltrates.
+    # Distinct from ARDS: less severe hypoxemia but stronger fever-driven
+    # tachycardia + tachypnea, moderate FiO2 dependence.
+    "lung_infected": {
+        "HR": 110.0,
+        "MAP": 76.0,
+        "RespRate": 26.0,
+        "SpO2": 90.0,
+        "PEEP": 9.0,
+        "FiO2": 55.0,
+        "TidalVol": 420.0,
+    },
 }
 
 CLINICAL_BOUNDS: Dict[str, tuple[float, float]] = {

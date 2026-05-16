@@ -181,6 +181,23 @@ Selective digital-twin evaluation with strict CI-style gates:
 python pipelines/evaluate_digital_twin.py --fail-on-thresholds
 ```
 
+### Major-project test cases
+
+| Test | What it checks | Where |
+|------|----------------|-------|
+| **Dataset-size sweep** (1000 vs 2000 vs N rows) | LSTM MAE / RMSE / hypoxia-F1 as a function of training rows | [pipelines/lstm_dataset_size_study.py](pipelines/lstm_dataset_size_study.py) → writes [reports/lstm_dataset_size_study.md](reports/lstm_dataset_size_study.md) |
+| **Normal vs lung-infected** | New `lung_infected` simulator profile + assertions on SpO2 / HR / RR / hypoxia incidence and twin compliance | [tests/test_lung_infected_profile.py](tests/test_lung_infected_profile.py) |
+| **Weather drives ventilator response** | Same proposed PEEP/FiO2/TidalVol under calm vs storm vs high-altitude weather → divergent SpO2 trajectories | [services/weather.py](services/weather.py) + [tests/test_weather_modulation.py](tests/test_weather_modulation.py) |
+
+Run the dataset-size sweep:
+```powershell
+# Quick laptop demo (≈ a few minutes per size with epochs=8)
+python pipelines/lstm_dataset_size_study.py --sizes 1000,2000 --epochs 8
+
+# Paper-grade run
+python pipelines/lstm_dataset_size_study.py --sizes 1000,2000,4000,8000 --epochs 20
+```
+
 ---
 
 ## Documentation
