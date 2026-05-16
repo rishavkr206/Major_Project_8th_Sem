@@ -71,7 +71,6 @@ temp/
 .claude/
 .mcp.json
 .opencode.json
-.cursor/
 
 # Legacy nested project folder (kept locally for data/venv, not for git)
 /Major Project/
