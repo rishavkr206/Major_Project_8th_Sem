@@ -73,7 +73,6 @@ A detailed component & dataflow walkthrough lives in [docs/architecture-decision
 ## Key Features
 
 - 🔁 **Digital Twin** — physiologically bounded patient model with safety guards ([services/digital_twin.py](services/digital_twin.py))
-- 🌐 **FIWARE-ready** — Orion Context Broker integration for twin and telemetry publishing ([docs/fiware_digital_twin.md](docs/fiware_digital_twin.md), [services/fiware_adapter.py](services/fiware_adapter.py))
 - 🧠 **LSTM Forecaster** — dual-head SpO₂ regression + hypoxia classification, plus a multi-risk variant ([services/lstm_inference.py](services/lstm_inference.py), [services/multi_risk_inference.py](services/multi_risk_inference.py))
 - 🎯 **PPO RL Agent** — Stable-Baselines3 trained in the twin env, with rule-based safety layer ([services/ppo_policy.py](services/ppo_policy.py))
 - 🔐 **Blockchain Audit** — off-chain SHA-256 hash chain + on-chain Solidity anchor (Hardhat) ([services/chain_anchor.py](services/chain_anchor.py), [blockchain/contracts/AuditAnchor.sol](blockchain/contracts/AuditAnchor.sol))
@@ -196,7 +195,6 @@ python pipelines/evaluate_digital_twin.py --fail-on-thresholds
 | [docs/safety-constraints.md](docs/safety-constraints.md) | Safety guards & clinical bounds |
 | [docs/blockchain_ventilator_framework.md](docs/blockchain_ventilator_framework.md) | Blockchain audit design |
 | [docs/multi_risk_integration_guide.md](docs/multi_risk_integration_guide.md) | Multi-risk LSTM head integration |
-| [docs/fiware_digital_twin.md](docs/fiware_digital_twin.md) | FIWARE Orion integration and 3D model guidance |
 | [docs/failure-recovery.md](docs/failure-recovery.md) | Graceful degradation & recovery |
 | [docs/demo-runbook.md](docs/demo-runbook.md) | Step-by-step demo script |
 | [docs/diagrams/](docs/diagrams/) | DFD, UML, system architecture diagrams |

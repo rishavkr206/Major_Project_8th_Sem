@@ -6,7 +6,6 @@
     <title>ICU Ventilator Digital Twin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -40,13 +39,6 @@
         </div>
         
         <div class="flex items-center space-x-6">
-            <div class="hidden xl:flex items-center space-x-2 text-xs">
-                <a href="index.html" class="text-sky-300 bg-sky-500/10 border border-sky-500/30 px-3 py-1 rounded">Live</a>
-                <a href="tests.html" class="text-slate-300 hover:text-white border border-slate-600 px-3 py-1 rounded">Test Cases</a>
-                <a href="models.html" class="text-slate-300 hover:text-white border border-slate-600 px-3 py-1 rounded">Model Metrics</a>
-                <a href="audit.html" class="text-slate-300 hover:text-white border border-slate-600 px-3 py-1 rounded">Audit</a>
-            </div>
-            <div class="h-8 w-px bg-slate-700 hidden xl:block"></div>
             <div class="flex items-center space-x-2">
                 <span class="text-sm text-slate-400">Patient ID:</span>
                 <select id="patientSelect" class="bg-slate-800 border border-slate-600 rounded px-3 py-1 text-sm focus:outline-none focus:border-blue-500 transition-colors">
@@ -54,39 +46,15 @@
                 </select>
             </div>
             <div class="h-8 w-px bg-slate-700"></div>
-            <button id="btn-run-tests" class="text-sm text-purple-400 hover:text-purple-300 px-3 py-1 rounded border border-purple-500/30 hover:border-purple-400/50 transition-colors" title="Run comprehensive test scenarios">
-                <i class="fas fa-flask-vial mr-1"></i> Run Tests
-            </button>
-            <div class="h-8 w-px bg-slate-700"></div>
             <div class="flex items-center space-x-2 text-sm text-emerald-400">
                 <i class="fas fa-link"></i>
                 <span id="chainStatus">Chain Valid</span>
             </div>
-            <div class="h-8 w-px bg-slate-700"></div>
-            <div class="flex items-center space-x-2 text-sm text-slate-400">
-                <i class="fas fa-satellite-dish"></i>
-                <span id="fiware-status">FIWARE init...</span>
-            </div>
         </div>
     </nav>
 
-    <!-- Test Scenarios Modal -->
-    <div id="test-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="glass-panel rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div class="flex justify-between items-center mb-4 sticky top-0 bg-slate-800/80 pb-4 border-b border-slate-700">
-                <h2 class="text-2xl font-bold text-white flex items-center gap-2">
-                    <i class="fas fa-flask-vial text-purple-400"></i> Test Scenarios Results
-                </h2>
-                <div class="flex items-center gap-3">
-                    <a href="tests.html" class="text-xs text-cyan-300 border border-cyan-500/40 rounded px-3 py-1 hover:bg-cyan-500/10">Open full tests page</a>
-                    <button onclick="closeTestModal()" class="text-slate-400 hover:text-white text-2xl">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            </div>
-            <div id="test-results-container" class="space-y-6"></div>
-        </div>
-    </div>
+    <!-- Main Content Grid -->
+    <main class="flex-1 overflow-y-auto px-4 pb-4">
         <div class="grid grid-cols-12 gap-4 h-full">
             
             <!-- Left Column: Vitals & History -->
@@ -128,33 +96,6 @@
                     </div>
                     <div class="relative flex-1 w-full h-full">
                         <canvas id="mainChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Ventilator 3D Model Panel -->
-                <div class="glass-panel p-4 rounded-xl min-h-[340px]">
-                    <div class="flex justify-between items-center mb-3">
-                        <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                            <i class="fas fa-cube text-cyan-400"></i> Ventilator 3D Model
-                        </h2>
-                        <span id="model-status" class="text-xs text-slate-400">Loading model...</span>
-                    </div>
-                    <div class="rounded-3xl overflow-hidden border border-slate-700 bg-slate-950/80" style="min-height: 320px;">
-                        <model-viewer id="ventilatorViewer"
-                            src="./ventilator.glb"
-                            alt="Ventilator 3D model"
-                            camera-controls
-                            auto-rotate
-                            style="width: 100%; height: 320px; background: #0f172a;"
-                            exposure="1"
-                            shadow-intensity="1"
-                            ar
-                            loading="eager">
-                        </model-viewer>
-                    </div>
-                    <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
-                        <div>Rotate: drag</div>
-                        <div>Zoom: scroll</div>
                     </div>
                 </div>
 
@@ -384,7 +325,6 @@
         const API_BASE = "http://localhost:8000";
         let mainChart = null;
         let twinChart = null;
-        let modelViewer = null;
         let currentPatientData = null;
         let currentRecommendation = null;
 
@@ -415,52 +355,13 @@
             }
         }
 
-        async function refreshFiwareStatus() {
-            const status = document.getElementById('fiware-status');
-            try {
-                const res = await fetch(`${API_BASE}/fiware/status`);
-                const data = await res.json();
-                if (data.enabled && data.health && data.health.reachable) {
-                    status.textContent = 'FIWARE connected';
-                    status.className = 'text-sm text-emerald-400';
-                } else if (data.enabled) {
-                    status.textContent = 'FIWARE offline';
-                    status.className = 'text-sm text-amber-400';
-                } else {
-                    status.textContent = 'FIWARE disabled';
-                    status.className = 'text-sm text-slate-400';
-                }
-            } catch (err) {
-                status.textContent = 'FIWARE unreachable';
-                status.className = 'text-sm text-red-400';
-            }
-        }
-
-        function bindModelViewer() {
-            modelViewer = document.getElementById('ventilatorViewer');
-            const status = document.getElementById('model-status');
-            if (!modelViewer) return;
-
-            modelViewer.addEventListener('load', () => {
-                status.textContent = 'Model loaded';
-                status.className = 'text-xs text-emerald-400';
-            });
-
-            modelViewer.addEventListener('error', () => {
-                status.textContent = 'Model load failed';
-                status.className = 'text-xs text-red-400';
-            });
-        }
-
         // Initialize App
         async function init() {
             setLstmPanelPlaceholder();
             await refreshLstmStatusFromHealth();
-            await refreshFiwareStatus();
             await fetchPatients();
             initChart();
             bindTwinPanel();
-            bindModelViewer();
 
             document.getElementById('patientSelect').addEventListener('change', (e) => {
                 if(e.target.value) loadPatient(e.target.value);
@@ -1103,210 +1004,8 @@
             }
         }
 
-        /* --- Test Scenarios Modal --- */
-        function openTestModal() {
-            document.getElementById('test-modal').classList.remove('hidden');
-        }
-
-        function closeTestModal() {
-            document.getElementById('test-modal').classList.add('hidden');
-        }
-
-        function renderScenarioOutputs(test) {
-            const vitals = test.predicted_vitals || {};
-            const risks = test.risk_predictions || {};
-            const vitalHtml = Object.entries(vitals).map(([name, value]) => `
-                <div class="flex justify-between gap-2 border-b border-slate-700/60 py-1">
-                    <span>${name.replaceAll('_', ' ')}</span>
-                    <span class="font-mono text-cyan-300">${Number(value).toFixed(1)}</span>
-                </div>
-            `).join('');
-            const riskHtml = Object.entries(risks).map(([name, value]) => `
-                <div class="flex justify-between gap-2 border-b border-slate-700/60 py-1">
-                    <span>${name.replaceAll('_', ' ')}</span>
-                    <span class="font-mono ${value.risk ? 'text-red-300' : 'text-emerald-300'}">${(Number(value.probability) * 100).toFixed(1)}%</span>
-                </div>
-            `).join('');
-            return `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-xs">
-                    <div class="bg-slate-950/60 rounded border border-slate-700 p-3">
-                        <div class="text-slate-400 uppercase font-semibold mb-2">All predicted vitals</div>
-                        ${vitalHtml}
-                    </div>
-                    <div class="bg-slate-950/60 rounded border border-slate-700 p-3">
-                        <div class="text-slate-400 uppercase font-semibold mb-2">All risk heads</div>
-                        ${riskHtml}
-                    </div>
-                </div>
-            `;
-        }
-
-        async function runTestScenarios() {
-            openTestModal();
-            const container = document.getElementById('test-results-container');
-            container.innerHTML = '<div class="text-center text-slate-400"><i class="fas fa-spinner fa-spin mr-2"></i>Running test scenarios...</div>';
-
-            try {
-                const res = await fetch(`${API_BASE}/tests/run-scenarios`);
-                const data = await res.json();
-
-                if (data.status !== 'success') {
-                    container.innerHTML = `<div class="text-red-400">Error: ${data.message}</div>`;
-                    return;
-                }
-
-                let html = '';
-
-                // Baseline Control
-                if (data.results.control && data.results.control.length > 0) {
-                    html += `
-                    <div class="border-b border-slate-700 pb-4 mb-4">
-                        <h3 class="text-lg font-bold text-emerald-400 mb-3 flex items-center gap-2">
-                            <i class="fas fa-vial-circle-check"></i> Baseline Control
-                        </h3>
-                    `;
-                    data.results.control.forEach(test => {
-                        html += `
-                        <div class="bg-emerald-900/15 rounded border border-emerald-700/40 p-4 mb-2">
-                            <div class="flex justify-between items-start mb-2">
-                                <div class="font-semibold text-white">${test.scenario_name}</div>
-                                <span class="text-xs text-emerald-400 font-bold">${test.alert_level}</span>
-                            </div>
-                            <div class="grid grid-cols-4 gap-2 text-xs text-slate-300 mb-2">
-                                <div>Pred SpO2: <span class="font-mono text-cyan-400">${test.pred_spo2.toFixed(1)}%</span></div>
-                                <div>Hypoxia: <span class="font-mono text-emerald-400">${(test.hypoxia_prob*100).toFixed(1)}%</span></div>
-                                <div>Source: <span class="font-mono text-indigo-400">${test.lstm_source}</span></div>
-                                <div>Observations: <span class="font-mono text-purple-400">${test.observations}</span></div>
-                            </div>
-                            <div class="text-xs text-slate-400">
-                                ${test.key_findings.map(f => `<div>- ${f}</div>`).join('')}
-                            </div>
-                            ${renderScenarioOutputs(test)}
-                        </div>
-                        `;
-                    });
-                    html += `</div>`;
-                }
-
-                // LSTM History Length Tests
-                if (data.results.lstm_history_length && data.results.lstm_history_length.length > 0) {
-                    html += `
-                    <div class="border-b border-slate-700 pb-4 mb-4">
-                        <h3 class="text-lg font-bold text-cyan-400 mb-3 flex items-center gap-2">
-                            <i class="fas fa-chart-line"></i> LSTM Performance by History Length
-                        </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    `;
-                    data.results.lstm_history_length.forEach(test => {
-                        html += `
-                        <div class="bg-slate-800/80 rounded border border-slate-700 p-3">
-                            <div class="text-sm font-semibold text-white mb-2">${test.observations} Observations</div>
-                            <div class="text-xs text-slate-300 space-y-1">
-                                <div>Pred SpO₂: <span class="font-mono text-cyan-400">${test.pred_spo2.toFixed(1)}%</span></div>
-                                <div>Hypoxia: <span class="font-mono text-amber-400">${(test.hypoxia_prob*100).toFixed(1)}%</span></div>
-                                <div>Status: <span class="font-mono text-emerald-400">${test.alert_level}</span></div>
-                            </div>
-                        </div>
-                        `;
-                    });
-                    html += `</div></div>`;
-                }
-
-                // Health Status Tests
-                if (data.results.health_status && data.results.health_status.length > 0) {
-                    html += `
-                    <div class="border-b border-slate-700 pb-4 mb-4">
-                        <h3 class="text-lg font-bold text-green-400 mb-3 flex items-center gap-2">
-                            <i class="fas fa-heart"></i> Health Status Scenarios
-                        </h3>
-                    `;
-                    data.results.health_status.forEach(test => {
-                        const alertColor = {'STABLE': 'text-emerald-400', 'WARNING': 'text-amber-400', 'CRITICAL': 'text-red-400'}[test.alert_level] || 'text-slate-400';
-                        html += `
-                        <div class="bg-slate-800/80 rounded border border-slate-700 p-4 mb-2">
-                            <div class="flex justify-between items-start mb-2">
-                                <div class="font-semibold text-white">${test.scenario_name}</div>
-                                <span class="text-xs ${alertColor} font-bold">${test.alert_level}</span>
-                            </div>
-                            <div class="grid grid-cols-4 gap-2 text-xs text-slate-300 mb-2">
-                                <div>SpO₂ Pred: <span class="font-mono text-cyan-400">${test.pred_spo2.toFixed(1)}%</span></div>
-                                <div>Hypoxia: <span class="font-mono text-amber-400">${(test.hypoxia_prob*100).toFixed(1)}%</span></div>
-                                <div>Source: <span class="font-mono text-indigo-400">${test.lstm_source}</span></div>
-                                <div>Observations: <span class="font-mono text-purple-400">${test.observations}</span></div>
-                            </div>
-                            <div class="text-xs text-slate-400">
-                                ${test.key_findings.map(f => `<div>✓ ${f}</div>`).join('')}
-                            </div>
-                        </div>
-                        `;
-                    });
-                    html += `</div>`;
-                }
-
-                // Weather Impact Tests
-                if (data.results.weather_impact && data.results.weather_impact.length > 0) {
-                    html += `
-                    <div class="border-b border-slate-700 pb-4 mb-4">
-                        <h3 class="text-lg font-bold text-blue-400 mb-3 flex items-center gap-2">
-                            <i class="fas fa-cloud"></i> Weather Impact on Ventilator
-                        </h3>
-                    `;
-                    data.results.weather_impact.forEach(test => {
-                        html += `
-                        <div class="bg-slate-800/80 rounded border border-slate-700 p-4 mb-2">
-                            <div class="font-semibold text-white mb-2">${test.scenario_name}</div>
-                            <div class="grid grid-cols-3 gap-2 text-xs text-slate-300 mb-2">
-                                <div>Pred SpO₂: <span class="font-mono text-cyan-400">${test.pred_spo2.toFixed(1)}%</span></div>
-                                <div>Risk: <span class="font-mono text-amber-400">${(test.hypoxia_prob*100).toFixed(1)}%</span></div>
-                                <div>Alert: <span class="font-mono text-green-400">${test.alert_level}</span></div>
-                            </div>
-                            <div class="text-xs text-slate-400">
-                                ${test.key_findings.map(f => `<div>✓ ${f}</div>`).join('')}
-                            </div>
-                        </div>
-                        `;
-                    });
-                    html += `</div>`;
-                }
-
-                // Anomaly Detection Tests
-                if (data.results.anomaly_detection && data.results.anomaly_detection.length > 0) {
-                    html += `
-                    <div class="pb-4">
-                        <h3 class="text-lg font-bold text-red-400 mb-3 flex items-center gap-2">
-                            <i class="fas fa-exclamation-triangle"></i> Anomaly Detection
-                        </h3>
-                    `;
-                    data.results.anomaly_detection.forEach(test => {
-                        html += `
-                        <div class="bg-red-900/20 rounded border border-red-700/50 p-4 mb-2">
-                            <div class="font-semibold text-red-400 mb-2">${test.scenario_name}</div>
-                            <div class="grid grid-cols-3 gap-2 text-xs text-slate-300 mb-2">
-                                <div>Pred SpO₂: <span class="font-mono text-red-400">${test.pred_spo2.toFixed(1)}%</span></div>
-                                <div>Risk: <span class="font-mono text-red-400">${(test.hypoxia_prob*100).toFixed(1)}%</span></div>
-                                <div>Alert: <span class="font-mono text-red-600 font-bold">${test.alert_level}</span></div>
-                            </div>
-                            <div class="text-xs text-red-300">
-                                ${test.key_findings.map(f => `<div>⚠ ${f}</div>`).join('')}
-                            </div>
-                        </div>
-                        `;
-                    });
-                    html += `</div>`;
-                }
-
-                container.innerHTML = html;
-            } catch (err) {
-                console.error(err);
-                container.innerHTML = `<div class="text-red-400">Failed to fetch test scenarios: ${err.message}</div>`;
-            }
-        }
-
         // Start
-        window.onload = () => {
-            init();
-            document.getElementById('btn-run-tests').addEventListener('click', runTestScenarios);
-        };
+        window.onload = init;
 
     </script>
 </body>

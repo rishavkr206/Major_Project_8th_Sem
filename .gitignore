@@ -1,21 +1,77 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
-.env
-.vscode/
 *.pyc
+.venv/
+.venv*/
+venv/
+venv*/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment / secrets
+.env
+.env.*
+
+# Editors / IDEs
+.vscode/
+.idea/
+.cursor/
+*.swp
 
 # Data / models / outputs
 *.csv
+*.tsv
+*.parquet
 *.keras
 *.h5
+*.hdf5
 *.pkl
+*.pickle
 *.joblib
+*.npy
+*.npz
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.bin
 
-# OS / editor
+# Node / frontend
+node_modules/
+dist/
+build/
+.next/
+.cache/
+
+# OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Logs / temp
 *.log
-# Added by code-review-graph
+tmp/
+temp/
+*.tmp
+
+# Databases (runtime)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Claude / tooling
 .code-review-graph/
+.claude/
+.mcp.json
+.opencode.json
+.cursor/
+
+# Legacy nested project folder (kept locally for data/venv, not for git)
+/Major Project/

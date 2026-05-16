@@ -7,7 +7,7 @@ import json
 import os
 import random
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from services.digital_twin import DigitalTwin
 from services.ppo_policy import PPOPolicy
@@ -17,16 +17,10 @@ from services.data_simulator import (
     VentilatorDataSimulator,
     validate_record,
 )
-from services.fiware_adapter import FiwareAdapter
 from services.lstm_inference import get_lstm_forecaster
 from services.multi_risk_inference import MultiRiskInferenceEngine
-from services.prometheus_metrics import (
-    metrics_response,
-    record_recommendation_metrics,
-    record_test_scenario_metrics,
-)
+from services.prometheus_metrics import metrics_response, record_recommendation_metrics
 from services.chain_anchor import anchor_now
-from tests.test_scenarios import format_console_report, results_to_dict, run_all_scenarios
 
 app = FastAPI(title="Ventilator Digital Twin API")
 
@@ -40,7 +34,6 @@ app.add_middleware(
 # Initialize Services
 audit_bridge = AuditBridge()
 multi_risk_engine = MultiRiskInferenceEngine()
-fiware_adapter = FiwareAdapter()
 
 # Repository root (parent of api/)
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -52,7 +45,6 @@ PATIENT_CSV_PATH: str | None = None
 patient_stream_cursors = {}
 df_index = None
 simulator_registry: Dict[str, VentilatorDataSimulator] = {}
-patient_history_cache: Dict[int, pd.DataFrame] = {}
 
 
 def _ensure_patient_timeseries_csv(repo_root: str) -> str | None:
@@ -64,15 +56,12 @@ def _ensure_patient_timeseries_csv(repo_root: str) -> str | None:
         os.path.join(repo_root, "clean_full_data_v2.csv"),
         os.path.join(repo_root, "data", "simulated_phase1.csv"),
         os.path.join(repo_root, "data", "demo_ventilator_data.csv"),
-        os.path.join(repo_root, "csv_files", "clean_full_data_v2.csv"),
-        os.path.join(repo_root, "csv_files", "simulated_phase1.csv"),
-        os.path.join(repo_root, "csv_files", "demo_ventilator_data.csv"),
     ]
     for path in candidates:
         if os.path.isfile(path):
             return path
 
-    demo_path = os.path.join(repo_root, "csv_files", "demo_ventilator_data.csv")
+    demo_path = os.path.join(repo_root, "data", "demo_ventilator_data.csv")
     try:
         from pipelines.simulated_ingestion import generate_simulated_dataframe
     except ImportError as exc:
@@ -153,47 +142,6 @@ async def health():
     }
 
 
-def _publish_history_to_fiware(stay_id: int, recent: List[Dict[str, Any]]) -> None:
-    try:
-        if recent:
-            fiware_adapter.publish_patient_history(stay_id, recent)
-    except Exception as exc:
-        print(f"[FIWARE] patient history publish failed for {stay_id}: {exc}")
-
-
-def _load_patient_data(stay_id: int) -> pd.DataFrame | None:
-    if stay_id in patient_history_cache:
-        return patient_history_cache[stay_id]
-    if df_index is None or PATIENT_CSV_PATH is None:
-        return None
-    try:
-        iter_csv = pd.read_csv(PATIENT_CSV_PATH, iterator=True, chunksize=10000)
-        patient_data = pd.concat([chunk[chunk['stay_id'] == stay_id] for chunk in iter_csv])
-        if patient_data.empty:
-            return None
-        patient_data = patient_data.sort_values('charttime').reset_index(drop=True)
-        patient_history_cache[stay_id] = patient_data
-        return patient_data
-    except Exception as exc:
-        print(f"[STREAM] failed to load patient {stay_id} data: {exc}")
-        return None
-
-
-def _get_patient_history_payload(stay_id: int, window: int = 96) -> Dict[str, Any]:
-    patient_data = _load_patient_data(stay_id)
-    if patient_data is None:
-        return _history_payload_from_simulator(stay_id)
-
-    if stay_id not in patient_stream_cursors:
-        patient_stream_cursors[stay_id] = len(patient_data) // 2
-
-    cursor = min(patient_stream_cursors[stay_id], len(patient_data))
-    patient_stream_cursors[stay_id] = cursor
-    recent = patient_data.iloc[:cursor].tail(window).to_dict(orient='records')
-    _publish_history_to_fiware(stay_id, recent)
-    return {"history": recent, "is_live": True, "source": "csv", "cursor": cursor}
-
-
 def _history_payload_from_simulator(stay_id: int) -> Dict[str, Any]:
     """Deterministic vitals stream for dashboard when no CSV is configured."""
     profile_cycle = ("normal", "ards", "copd", "unstable")
@@ -212,7 +160,6 @@ def _history_payload_from_simulator(stay_id: int) -> Dict[str, Any]:
         patient_stream_cursors[stay_id] = max(1, len(df) // 2)
     cursor = patient_stream_cursors[stay_id]
     recent = df.iloc[:cursor].tail(96).to_dict(orient="records")
-    _publish_history_to_fiware(stay_id, recent)
     return {"history": recent, "is_live": True, "source": "simulator"}
 
 
@@ -224,43 +171,42 @@ async def get_patients():
         return {"patients": patients[:100]}
     return {"patients": [30004018, 30004019, 30004020]}
 
-@app.get("/fiware/status")
-async def fiware_status():
-    """Returns FIWARE integration status and broker reachability."""
-    return {
-        "enabled": fiware_adapter.enabled,
-        "base_url": fiware_adapter.base_url,
-        "api_version": fiware_adapter.api_version,
-        "service": fiware_adapter.service,
-        "service_path": fiware_adapter.service_path,
-        "health": fiware_adapter.health_check(),
-    }
-
 @app.get("/patient/{stay_id}/history")
 async def get_patient_history(stay_id: int):
-    try:
-        payload = _get_patient_history_payload(stay_id)
-        return payload
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    if df_index is not None and PATIENT_CSV_PATH:
+        try:
+             # Load just this patient's data
+             # Pandas chunking or dask would be better for huge files, but this is okay for prototype
+             iter_csv = pd.read_csv(PATIENT_CSV_PATH, iterator=True, chunksize=10000)
+             patient_data = pd.concat([chunk[chunk['stay_id'] == stay_id] for chunk in iter_csv])
+             
+             if patient_data.empty:
+                 return _history_payload_from_simulator(stay_id)
+                 
+             patient_data = patient_data.sort_values('charttime')
+             
+             # Initialize stream cursor if not present
+             if stay_id not in patient_stream_cursors:
+                 # Start halfway through the patient's records to allow history + streaming
+                 patient_stream_cursors[stay_id] = len(patient_data) // 2
+                 
+             cursor = patient_stream_cursors[stay_id]
+             
+             # Return records up to the current streaming cursor
+             recent = patient_data.iloc[:cursor].tail(96).to_dict(orient='records')
+             
+             return {"history": recent, "is_live": True, "source": "csv"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+    return _history_payload_from_simulator(stay_id)
 
 @app.post("/patient/{stay_id}/tick")
 async def advance_patient_stream(stay_id: int):
     """Advances the simulation clock by 1 tick (bringing in 1 new record)"""
-    if stay_id not in patient_stream_cursors:
-        return {"status": "error", "message": "Stream not initialized"}
-
-    patient_stream_cursors[stay_id] += 1
-    try:
-        payload = _get_patient_history_payload(stay_id, window=1)
-        latest = payload["history"][-1] if payload["history"] else None
-        return {
-            "status": "advanced",
-            "current_cursor": patient_stream_cursors[stay_id],
-            "latest_record": latest,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    if stay_id in patient_stream_cursors:
+        patient_stream_cursors[stay_id] += 1
+        return {"status": "advanced", "current_cursor": patient_stream_cursors[stay_id]}
+    return {"status": "error", "message": "Stream not initialized"}
 
 
 @app.post("/simulator/session/{stay_id}")
@@ -409,30 +355,6 @@ async def twin_replay(payload: Dict[str, Any]):
         actor="SYSTEM_TWIN",
     )
 
-    try:
-        fiware_adapter.publish_twin_simulation(
-            stay_id=stay_id,
-            result=result,
-            current_vitals={
-                "SpO2": float(current_spo2),
-                "PEEP": float(proposed.get("PEEP", twin.last_PEEP)),
-                "FiO2": float(proposed.get("FiO2", twin.last_FiO2)),
-                "TidalVol": float(proposed.get("TidalVol", twin.last_TidalVol)),
-            },
-            twin_state={
-                "compliance_factor": twin.compliance_factor,
-                "baseline_spo2": twin.baseline_spo2,
-                "last_PEEP": twin.last_PEEP,
-                "last_FiO2": twin.last_FiO2,
-                "last_TidalVol": twin.last_TidalVol,
-                "uncertainty": twin.uncertainty,
-                "is_calibrated": twin.is_calibrated,
-            },
-            history_length=len(history) if isinstance(history, list) else 0,
-        )
-    except Exception as exc:
-        print(f"[FIWARE] twin replay publish failed for {stay_id}: {exc}")
-
     return response
 
 @app.post("/patient/{stay_id}/recommend")
@@ -521,25 +443,7 @@ async def get_recommendation(stay_id: int, payload: Dict[str, Any]):
         payload=result,
         actor="SYSTEM_PPO"
     )
-
-    try:
-        fiware_adapter.publish_recommendation(
-            stay_id=stay_id,
-            result=result,
-            current_vitals={
-                "SpO2": current_vitals.get("SpO2"),
-                "PEEP": current_vitals.get("PEEP"),
-                "FiO2": current_vitals.get("FiO2"),
-                "TidalVol": current_vitals.get("TidalVol"),
-                "HR": current_vitals.get("HR"),
-                "MAP": current_vitals.get("MAP"),
-                "RespRate": current_vitals.get("RespRate"),
-            },
-            history_length=len(history) if isinstance(history, list) else 0,
-        )
-    except Exception as exc:
-        print(f"[FIWARE] recommendation publish failed for {stay_id}: {exc}")
-
+    
     return result
 
 @app.post("/patient/{stay_id}/risks")
@@ -670,23 +574,6 @@ async def verify_chain():
     return {"valid": is_valid, "message": message, "stats": audit_bridge.stats()}
 
 
-@app.get("/model/evaluation")
-async def model_evaluation():
-    """Return saved model evaluation metrics for dashboard/report pages."""
-    files = {
-        "lstm_dual_head": os.path.join(REPO_ROOT, "reports", "model_evaluation_lstm.json"),
-        "multi_risk_lstm": os.path.join(REPO_ROOT, "reports", "model_evaluation_multi_risk.json"),
-    }
-    payload: Dict[str, Any] = {}
-    for name, path in files.items():
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as fh:
-                payload[name] = json.load(fh)
-        else:
-            payload[name] = {"missing": True, "path": path}
-    return {"status": "success", "reports": payload}
-
-
 @app.post("/audit/anchor")
 async def commit_anchor(payload: Dict[str, Any] | None = None):
     """
@@ -702,45 +589,6 @@ async def commit_anchor(payload: Dict[str, Any] | None = None):
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result
-
-
-@app.get("/tests/run-scenarios")
-async def run_test_scenarios():
-    """
-    Execute comprehensive test scenarios:
-    - LSTM performance across different history lengths (1000 through 5000 values)
-    - Healthy person vs. lung infection (mild, moderate, severe)
-    - Weather impact on ventilator output (humidity, temperature, pressure)
-    - Anomaly detection (disconnect, obstruction, sensor drift, calibration loss)
-    
-    Returns organized test results for dashboard display and terminal logging.
-    """
-    try:
-        scenario_results = run_all_scenarios()
-
-        print(format_console_report(scenario_results))
-
-        for category, results in scenario_results.items():
-            for result in results:
-                record_test_scenario_metrics(
-                    category=category,
-                    scenario=result.scenario_name,
-                    alert_level=result.alert_level,
-                    observations=result.observations,
-                    pred_spo2=result.pred_spo2,
-                    hypoxia_prob=result.hypoxia_prob,
-                )
-
-        formatted_results = results_to_dict(scenario_results)
-
-        return {
-            "status": "success",
-            "total_scenarios": sum(len(r) for r in formatted_results.values()),
-            "results": formatted_results,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Test scenarios failed: {exc}") from exc
-
 
 if __name__ == "__main__":
     import uvicorn

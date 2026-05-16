@@ -39,21 +39,6 @@ if _HAS_PROM:
         "ventilator_recommend_stay_id",
         "stay_id on the most recent /recommend call",
     )
-    SCENARIO_PRED_NEXT_SPO2 = Gauge(
-        "ventilator_test_scenario_predicted_spo2",
-        "Latest demo test scenario predicted next SpO2 (%)",
-        ["category", "scenario", "alert_level"],
-    )
-    SCENARIO_HYPOXIA_PROB = Gauge(
-        "ventilator_test_scenario_hypoxia_probability",
-        "Latest demo test scenario hypoxia probability [0,1]",
-        ["category", "scenario", "alert_level"],
-    )
-    SCENARIO_OBSERVATIONS = Gauge(
-        "ventilator_test_scenario_observations",
-        "History length used by the latest demo test scenario",
-        ["category", "scenario", "alert_level"],
-    )
 
 
 def record_recommendation_metrics(
@@ -70,27 +55,6 @@ def record_recommendation_metrics(
     LSTM_PRED_NEXT_SPO2.set(float(pred_next_spo2))
     LSTM_HYPOXIA_PROB.set(float(hypoxia_prob))
     LSTM_KERAS_ACTIVE.set(1.0 if lstm_source == "lstm_keras" else 0.0)
-
-
-def record_test_scenario_metrics(
-    category: str,
-    scenario: str,
-    alert_level: str,
-    observations: int,
-    pred_spo2: float,
-    hypoxia_prob: float,
-) -> None:
-    """Expose latest scenario outputs so Grafana can show the demo test cases."""
-    if not _HAS_PROM:
-        return
-    labels = {
-        "category": str(category),
-        "scenario": str(scenario),
-        "alert_level": str(alert_level),
-    }
-    SCENARIO_PRED_NEXT_SPO2.labels(**labels).set(float(pred_spo2))
-    SCENARIO_HYPOXIA_PROB.labels(**labels).set(float(hypoxia_prob))
-    SCENARIO_OBSERVATIONS.labels(**labels).set(float(observations))
 
 
 def metrics_response() -> Tuple[bytes, str]:

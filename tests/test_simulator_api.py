@@ -154,43 +154,6 @@ class SimulatorApiTests(unittest.TestCase):
         self.assertEqual(verify_resp.status_code, 200)
         self.assertTrue(verify_resp.json()["valid"], "audit chain must remain valid after TWIN_SIM")
 
-    def test_demo_scenarios_endpoint_returns_control_and_length_cases(self) -> None:
-        resp = self.client.get("/tests/run-scenarios")
-        self.assertEqual(resp.status_code, 200)
-        body = resp.json()
-        self.assertEqual(body["status"], "success")
-        self.assertIn("control", body["results"])
-        self.assertEqual(len(body["results"]["control"]), 1)
-        control = body["results"]["control"][0]
-        self.assertIn("predicted_vitals", control)
-        self.assertIn("risk_predictions", control)
-        self.assertIn("Next_HR", control["predicted_vitals"])
-        self.assertIn("Shock_Risk", control["risk_predictions"])
-
-        lengths = [
-            item["observations"]
-            for item in body["results"]["lstm_history_length"]
-        ]
-        self.assertEqual(lengths, [1000, 2000, 3000, 4000, 5000])
-
-        categories = ["health_status", "weather_impact", "anomaly_detection"]
-        for category in categories:
-            self.assertGreater(len(body["results"][category]), 0)
-            for result in body["results"][category]:
-                self.assertIn(result["alert_level"], {"STABLE", "WARNING", "CRITICAL"})
-                self.assertGreaterEqual(result["hypoxia_prob"], 0.0)
-                self.assertLessEqual(result["hypoxia_prob"], 1.0)
-
-    def test_model_evaluation_endpoint_returns_saved_metrics(self) -> None:
-        resp = self.client.get("/model/evaluation")
-        self.assertEqual(resp.status_code, 200)
-        body = resp.json()
-        self.assertEqual(body["status"], "success")
-        self.assertIn("lstm_dual_head", body["reports"])
-        self.assertIn("multi_risk_lstm", body["reports"])
-        self.assertIn("next_spo2_mae", body["reports"]["lstm_dual_head"])
-        self.assertIn("Next_HR_mae", body["reports"]["multi_risk_lstm"])
-
 
 if __name__ == "__main__":
     unittest.main()
