@@ -1,0 +1,26 @@
+# Virtual env
+.venv*/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# ML artifacts
+data/
+*.csv
+*.pkl
+*.pt
+*.pth
+*.h5
+
+# Model folders
+ml/
+
+# Logs
+*.log
+
+# OS / editor
+.vscode/
+.idea/
+.DS_Store

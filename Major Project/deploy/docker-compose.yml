@@ -1,0 +1,36 @@
+# Grafana + Prometheus for LSTM / vitals time series (scrapes FastAPI /metrics).
+#
+# 1) Install: pip install prometheus-client
+# 2) Run API bound to all interfaces so the container can scrape it:
+#    python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+# 3) From this folder: docker compose up -d
+# 4) Grafana http://localhost:3000  (admin / admin) → Dashboards → Ventilator LSTM
+# 5) Use the dashboard while the web UI polls /recommend (every ~5s) to build series.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus

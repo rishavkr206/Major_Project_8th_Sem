@@ -435,7 +435,7 @@ async def get_recommendation(stay_id: int, payload: Dict[str, Any]):
             },
         )
     result["shap_insights"] = shap
-
+    
     # Log to blockchain
     audit_bridge.log_event(
         event_type="RECOMMENDATION",
@@ -443,18 +443,18 @@ async def get_recommendation(stay_id: int, payload: Dict[str, Any]):
         payload=result,
         actor="SYSTEM_PPO"
     )
-
+    
     return result
 
 @app.post("/patient/{stay_id}/risks")
 async def predict_clinical_risks(stay_id: int, payload: Dict[str, Any]):
     """
     Predict 5 clinical risks + next-step vitals using multi-task LSTM.
-
+    
     Input:
       - history: array of vital sign measurements (12+ timesteps)
                 Each record must have: HR, MAP, RespRate, SpO2, PEEP, FiO2, TidalVol
-
+    
     Returns:
       - regression_predictions: Next_SpO2, Next_HR, Next_MAP, Next_RespRate, Next_TidalVol
       - risk_predictions: Hypoxia_Risk, Tachycardia_Risk, Hypotension_Risk, Tachypnea_Risk, VILI_Risk
@@ -466,7 +466,7 @@ async def predict_clinical_risks(stay_id: int, payload: Dict[str, Any]):
                 status_code=503,
                 detail="Multi-risk LSTM model not found or failed to load. Model training may not be complete."
             )
-
+    
     history = payload.get("history", [])
     if not isinstance(history, list) or len(history) < 12:
         raise HTTPException(

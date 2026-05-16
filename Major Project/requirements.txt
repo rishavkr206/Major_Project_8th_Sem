@@ -1,0 +1,13 @@
+# API, HTML dashboard client, tests, Prometheus /metrics (Grafana)
+numpy>=1.26.0
+pandas>=2.0.0
+fastapi>=0.109.0,<0.116
+# Pin starlette range matching fastapi 0.115.x — newer starlette 1.0 breaks Router(on_startup=...)
+starlette>=0.37.2,<0.42
+uvicorn[standard]>=0.27.0
+httpx>=0.26.0
+prometheus-client>=0.20.0
+
+# LSTM (Keras) + feature engineering pipeline
+tensorflow>=2.15.0
+scikit-learn>=1.3.0

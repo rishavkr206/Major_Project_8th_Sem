@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICU Ventilator Digital Twin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+        }
+        .anim-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Navbar -->
+    <nav class="glass-panel m-4 p-4 flex justify-between items-center z-10 relative">
+        <div class="flex items-center space-x-3">
+            <i class="fas fa-lungs text-blue-400 text-2xl"></i>
+            <div>
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Ventilator OS</h1>
+                <p class="text-xs text-slate-400">Digital Twin & Blockchain Audit</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-2">
+                <span class="text-sm text-slate-400">Patient ID:</span>
+                <select id="patientSelect" class="bg-slate-800 border border-slate-600 rounded px-3 py-1 text-sm focus:outline-none focus:border-blue-500 transition-colors">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="h-8 w-px bg-slate-700"></div>
+            <div class="flex items-center space-x-2 text-sm text-emerald-400">
+                <i class="fas fa-link"></i>
+                <span id="chainStatus">Chain Valid</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 overflow-y-auto px-4 pb-4">
+        <div class="grid grid-cols-12 gap-4 h-full">
+            
+            <!-- Left Column: Vitals & History -->
+            <div class="col-span-8 flex flex-col space-y-4">
+                
+                <!-- Current Status Cards -->
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="glass-panel p-4 rounded-xl flex flex-col justify-between relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-blue-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <div class="text-slate-400 text-sm mb-1 flex items-center justify-between">SpO₂ <i class="fas fa-tint text-blue-400/50"></i></div>
+                        <div class="text-3xl font-bold font-mono" id="val-spo2">--%</div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl flex flex-col justify-between relative overflow-hidden group">
+                         <div class="absolute inset-0 bg-red-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <div class="text-slate-400 text-sm mb-1 flex items-center justify-between">HR <i class="fas fa-heartbeat text-red-400/50"></i></div>
+                        <div class="text-3xl font-bold font-mono" id="val-hr">--</div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl flex flex-col justify-between relative overflow-hidden group">
+                         <div class="absolute inset-0 bg-green-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <div class="text-slate-400 text-sm mb-1 flex items-center justify-between">MAP <i class="fas fa-signature text-green-400/50"></i></div>
+                        <div class="text-3xl font-bold font-mono" id="val-map">--</div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl flex flex-col justify-between relative overflow-hidden group">
+                         <div class="absolute inset-0 bg-yellow-500/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                        <div class="text-slate-400 text-sm mb-1 flex items-center justify-between">Resp Rate <i class="fas fa-wind text-yellow-400/50"></i></div>
+                        <div class="text-3xl font-bold font-mono" id="val-rr">--</div>
+                    </div>
+                </div>
+
+                <!-- Main Chart -->
+                <div class="glass-panel p-4 rounded-xl flex-1 min-h-[300px] flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold text-slate-200">Patient Trajectory</h2>
+                        <div class="flex space-x-2 text-xs">
+                            <span class="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">Historical</span>
+                            <span class="px-2 py-1 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30 border-dashed">Predicted (Twin)</span>
+                            <span class="px-2 py-1 bg-purple-500/10 text-purple-300/80 rounded border border-purple-500/20">± Uncertainty</span>
+                        </div>
+                    </div>
+                    <div class="relative flex-1 w-full h-full">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Twin Replay Debug Panel -->
+                <div class="glass-panel p-4 rounded-xl">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center">
+                            <i class="fas fa-flask text-purple-400 mr-2"></i> Twin Replay (Debug)
+                        </h2>
+                        <button id="twin-toggle" class="text-xs text-slate-400 hover:text-white">
+                            <i class="fas fa-chevron-down"></i> Show
+                        </button>
+                    </div>
+                    <div id="twin-panel" class="hidden">
+                        <div class="grid grid-cols-6 gap-2 text-xs mb-3">
+                            <div>
+                                <label class="text-slate-400 block mb-1">PEEP</label>
+                                <input id="twin-peep" type="number" step="0.5" value="10" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">FiO₂</label>
+                                <input id="twin-fio2" type="number" step="1" value="60" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">TidalVol</label>
+                                <input id="twin-tv" type="number" step="10" value="450" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">Steps</label>
+                                <input id="twin-steps" type="number" min="1" max="96" value="8" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">Noise</label>
+                                <input id="twin-noise" type="number" step="0.1" min="0" value="0" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="text-slate-400 block mb-1">Seed</label>
+                                <input id="twin-seed" type="number" placeholder="auto" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white font-mono"/>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 mb-3">
+                            <button id="twin-run" class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium px-3 py-1.5 rounded border border-purple-400/50">
+                                <i class="fas fa-play mr-1"></i> Run Replay
+                            </button>
+                            <button id="twin-fill-recommend" class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium px-3 py-1.5 rounded border border-slate-500">
+                                <i class="fas fa-magic mr-1"></i> Use Recommendation
+                            </button>
+                            <span id="twin-mode-chip" class="text-xs font-mono px-2 py-1.5 rounded bg-slate-800 text-slate-400 border border-slate-600">idle</span>
+                        </div>
+                        <div class="grid grid-cols-12 gap-3">
+                            <div class="col-span-7 bg-slate-900/70 rounded-lg p-2 border border-slate-700 min-h-[180px]">
+                                <canvas id="twinChart"></canvas>
+                            </div>
+                            <div class="col-span-5 bg-slate-900/70 rounded-lg p-3 border border-slate-700 text-xs space-y-2">
+                                <div>
+                                    <div class="text-slate-500 uppercase font-semibold mb-1">Applied (post-clamp)</div>
+                                    <div id="twin-applied" class="font-mono text-slate-200">—</div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <div class="text-slate-500 mb-1">Mean SpO₂</div>
+                                        <div id="twin-mean" class="font-mono text-sky-300 text-base">—</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-slate-500 mb-1">Δ SpO₂</div>
+                                        <div id="twin-delta" class="font-mono text-base">—</div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <div class="text-slate-500 mb-1">Uncertainty</div>
+                                        <div id="twin-unc" class="font-mono text-amber-300">—</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-slate-500 mb-1">Compliance</div>
+                                        <div id="twin-comp" class="font-mono text-slate-300">—</div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 pt-1">
+                                    <span id="twin-risk" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">risk: —</span>
+                                    <span id="twin-tvrisk" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">tv_risk: —</span>
+                                </div>
+                                <div id="twin-clamp-warn" class="hidden text-[11px] text-amber-300 border-t border-slate-700 pt-2">
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                    Proposed values were clamped to safe bounds.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Settings -->
+                <div class="glass-panel p-4 rounded-xl">
+                    <h2 class="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Current Ventilator Settings</h2>
+                    <div class="grid grid-cols-3 gap-6">
+                        <div>
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-300">PEEP</span><span id="set-peep-val" class="font-mono text-blue-400">--</span></div>
+                            <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="set-peep-bar" class="bg-blue-400 h-1.5 rounded-full" style="width: 0%"></div></div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-300">FiO₂</span><span id="set-fio2-val" class="font-mono text-indigo-400">--</span></div>
+                            <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="set-fio2-bar" class="bg-indigo-400 h-1.5 rounded-full" style="width: 0%"></div></div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1"><span class="text-slate-300">Tidal Vol</span><span id="set-tv-val" class="font-mono text-purple-400">--</span></div>
+                            <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="set-tv-bar" class="bg-purple-400 h-1.5 rounded-full" style="width: 0%"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: AI Co-Pilot & Audit -->
+            <div class="col-span-4 flex flex-col space-y-4 h-full">
+                
+                <!-- Recommendation Engine -->
+                <div class="glass-panel p-5 rounded-xl border border-blue-500/30 flex flex-col relative overflow-hidden shrink-0">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                        <i class="fas fa-brain text-6xl text-blue-400"></i>
+                    </div>
+                    
+                    <div class="flex justify-between items-center mb-4 relative z-10">
+                        <h2 class="text-lg font-bold text-white flex items-center">
+                            <i class="fas fa-robot text-blue-400 mr-2"></i> AI Co-Pilot
+                        </h2>
+                        <div class="flex flex-col items-end gap-1 text-right">
+                            <span id="ai-status" class="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full"><i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing...</span>
+                        </div>
+                    </div>
+
+                    <!-- LSTM / ML forecast: large panel so the model path is obvious in the UI -->
+                    <div id="lstm-panel" class="relative z-10 mb-3 rounded-xl border border-indigo-500/40 bg-slate-950/75 p-3 shadow-lg shadow-indigo-900/20">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i class="fas fa-project-diagram text-indigo-400"></i>
+                                LSTM forecast
+                            </h3>
+                            <span id="lstm-engine-chip" class="text-xs font-mono px-2 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-600 shrink-0">Awaiting forecast…</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-900/90 rounded-lg p-3 border border-slate-700">
+                                <div class="text-[11px] text-slate-500 uppercase font-medium mb-1">Pred. next SpO₂</div>
+                                <div id="lstm-val-pred-spo2" class="text-2xl font-mono font-bold text-sky-300">--</div>
+                            </div>
+                            <div class="bg-slate-900/90 rounded-lg p-3 border border-slate-700">
+                                <div class="text-[11px] text-slate-500 uppercase font-medium mb-1">Hypoxia risk</div>
+                                <div id="lstm-val-hypoxia" class="text-2xl font-mono font-bold text-amber-300">--</div>
+                            </div>
+                        </div>
+                        <p id="lstm-artifact-line" class="text-[10px] text-slate-500 font-mono truncate border-t border-slate-700/60 pt-2 mt-2"></p>
+                        <p id="lstm-hint" class="text-xs text-slate-400 mt-1 leading-snug"></p>
+                    </div>
+
+                    <div id="rec-container" class="space-y-4 hidden relative z-10">
+                        <!-- Proposed Changes -->
+                        <div class="bg-slate-800/80 rounded border border-slate-700 p-3">
+                            <h3 class="text-xs text-slate-400 mb-2 uppercase font-semibold">Proposed Adjustments</h3>
+                            <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                                <div class="bg-slate-900 rounded p-2 border border-slate-700">
+                                    <div class="text-slate-500 text-xs mb-1">∆ PEEP</div>
+                                    <div id="rec-peep" class="font-mono font-semibold text-white"></div>
+                                </div>
+                                <div class="bg-slate-900 rounded p-2 border border-slate-700">
+                                    <div class="text-slate-500 text-xs mb-1">∆ FiO₂</div>
+                                    <div id="rec-fio2" class="font-mono font-semibold text-white"></div>
+                                </div>
+                                <div class="bg-slate-900 rounded p-2 border border-slate-700">
+                                    <div class="text-slate-500 text-xs mb-1">∆ TV</div>
+                                    <div id="rec-tv" class="font-mono font-semibold text-white"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rationale -->
+                        <div>
+                            <h3 class="text-xs text-slate-400 mb-1">Rationale</h3>
+                            <ul id="rec-rationale" class="text-sm text-slate-300 space-y-1 list-disc pl-4 marker:text-blue-500">
+                            </ul>
+                        </div>
+                        
+                        <!-- Alert Flags -->
+                        <div id="rec-alerts" class="text-sm space-y-1">
+                        </div>
+                        
+                        <!-- Explainability (SHAP) -->
+                        <div class="mt-3 border-t border-slate-700/50 pt-3">
+                            <h3 class="text-xs text-slate-400 mb-2 uppercase font-semibold flex items-center justify-between">
+                                Model Explainability
+                                <i class="fas fa-magic text-purple-400"></i>
+                            </h3>
+                            <div id="rec-shap" class="space-y-2 text-xs">
+                                <!-- SHAP bars go here -->
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex space-x-2 pt-2">
+                             <button id="btn-accept" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 px-4 rounded transition-colors text-sm border border-emerald-400/50">
+                                <i class="fas fa-check mr-1"></i> Accept
+                            </button>
+                             <button id="btn-override" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded transition-colors text-sm border border-slate-500">
+                                <i class="fas fa-pen mr-1"></i> Override
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blockchain Ledger -->
+                <div class="glass-panel p-4 rounded-xl flex-1 flex flex-col overflow-hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-semibold text-slate-200">
+                            <i class="fas fa-link text-emerald-400 mr-2"></i> Audit Ledger
+                        </h2>
+                        <button onclick="verifyChain()" class="text-xs text-slate-400 hover:text-white transition-colors">
+                            <i class="fas fa-shield-alt mr-1"></i> Verify
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto pr-2 space-y-3" id="audit-list">
+                        <!-- Items injected here -->
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+        let mainChart = null;
+        let twinChart = null;
+        let currentPatientData = null;
+        let currentRecommendation = null;
+
+        let streamInterval = null;
+
+        function setLstmPanelPlaceholder() {
+            document.getElementById('lstm-val-pred-spo2').textContent = '--';
+            document.getElementById('lstm-val-hypoxia').textContent = '--';
+        }
+
+        async function refreshLstmStatusFromHealth() {
+            const line = document.getElementById('lstm-artifact-line');
+            const hint = document.getElementById('lstm-hint');
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const h = await res.json();
+                const L = h.lstm || {};
+                const bits = [];
+                if (L.artifacts_found && L.artifact_dir) bits.push(`Artifacts: ${L.artifact_dir}`);
+                if (L.model_loaded) bits.push('API loaded Keras weights');
+                else if (L.artifacts_found) bits.push('files present, model not loaded');
+                if (L.load_error) bits.push(`load_error: ${L.load_error}`);
+                line.textContent = bits.join(' · ') || 'No LSTM artifact directory (see RUNNING.md).';
+                hint.textContent = 'Load a patient — the chip above will show Keras vs heuristic once /recommend runs.';
+            } catch (e) {
+                line.textContent = 'Could not reach /health.';
+                hint.textContent = 'Is the API running at ' + API_BASE + '?';
+            }
+        }
+
+        // Initialize App
+        async function init() {
+            setLstmPanelPlaceholder();
+            await refreshLstmStatusFromHealth();
+            await fetchPatients();
+            initChart();
+            bindTwinPanel();
+
+            document.getElementById('patientSelect').addEventListener('change', (e) => {
+                if(e.target.value) loadPatient(e.target.value);
+            });
+
+            // Setup buttons
+            document.getElementById('btn-accept').addEventListener('click', () => submitAction('accept'));
+            document.getElementById('btn-override').addEventListener('click', () => submitAction('override'));
+        }
+
+        async function fetchPatients() {
+            try {
+                const res = await fetch(`${API_BASE}/patients`);
+                const data = await res.json();
+                const select = document.getElementById('patientSelect');
+                select.innerHTML = '<option value="">Select Patient...</option>';
+                data.patients.forEach(pid => {
+                    select.innerHTML += `<option value="${pid}">${pid}</option>`;
+                });
+                
+                // Auto load first if available
+                if (data.patients.length > 0) {
+                    select.value = data.patients[0];
+                    loadPatient(data.patients[0]);
+                }
+            } catch (err) {
+                console.error("Failed to fetch patients", err);
+            }
+        }
+
+        async function loadPatient(stayId) {
+            resetUI();
+            if(streamInterval) clearInterval(streamInterval);
+            
+            try {
+                await fetchAndSetPatientData(stayId);
+                
+                // Start live stream
+                streamInterval = setInterval(async () => {
+                    await fetch(`${API_BASE}/patient/${stayId}/tick`, {method: 'POST'});
+                    await fetchAndSetPatientData(stayId);
+                }, 5000); // refresh every 5 seconds simulating new data arrival
+                
+            } catch (err) {
+                console.error("Failed to load patient data", err);
+            }
+        }
+        
+        async function fetchAndSetPatientData(stayId) {
+             const [histRes, auditRes] = await Promise.all([
+                 fetch(`${API_BASE}/patient/${stayId}/history`),
+                 fetch(`${API_BASE}/patient/${stayId}/audit_trail`)
+             ]);
+             
+             const histData = await histRes.json();
+             const auditData = await auditRes.json();
+             
+             currentPatientData = histData.history || [];
+             updateHistoricalUI(currentPatientData);
+             updateAuditLog(auditData.trail);
+             
+             const latest = currentPatientData.length > 0
+                 ? currentPatientData[currentPatientData.length - 1]
+                 : null;
+             if (latest) {
+                 await fetchRecommendation(stayId, latest);
+             } else {
+                 setLstmPanelPlaceholder();
+                 document.getElementById('lstm-hint').textContent = 'No history rows yet — cannot run LSTM window.';
+             }
+        }
+
+        function resetUI() {
+            document.getElementById('rec-container').classList.add('hidden');
+            document.getElementById('ai-status').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing...';
+            document.getElementById('ai-status').className = 'text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full';
+            setLstmPanelPlaceholder();
+            
+            ['spo2', 'hr', 'map', 'rr'].forEach(id => {
+               document.getElementById(`val-${id}`).innerText = '--';
+            });
+        }
+
+        function updateHistoricalUI(history) {
+            if(!history || history.length === 0) return;
+            
+            const latest = history[history.length - 1];
+            
+            // Vitals
+            document.getElementById('val-spo2').innerText = latest.SpO2?.toFixed(1) || '--';
+            document.getElementById('val-hr').innerText = latest.HR?.toFixed(0) || '--';
+            document.getElementById('val-map').innerText = latest.MAP?.toFixed(0) || '--';
+            document.getElementById('val-rr').innerText = latest.RespRate?.toFixed(0) || '--';
+            
+            // Color code SpO2
+            const spo2El = document.getElementById('val-spo2');
+            if(latest.SpO2 < 90) spo2El.className = "text-3xl font-bold font-mono text-red-500";
+            else if(latest.SpO2 < 94) spo2El.className = "text-3xl font-bold font-mono text-yellow-500";
+            else spo2El.className = "text-3xl font-bold font-mono text-emerald-400";
+            
+            // Target settings
+            document.getElementById('set-peep-val').innerText = `${latest.PEEP || '--'}`;
+            document.getElementById('set-peep-bar').style.width = `${((latest.PEEP || 0)/20)*100}%`;
+            
+            document.getElementById('set-fio2-val').innerText = `${latest.FiO2 || '--'}%`;
+            document.getElementById('set-fio2-bar').style.width = `${((latest.FiO2 || 0)/100)*100}%`;
+            
+            document.getElementById('set-tv-val').innerText = `${latest.TidalVol || '--'}`;
+            document.getElementById('set-tv-bar').style.width = `${((latest.TidalVol || 0)/800)*100}%`;
+
+            // Update Chart
+            updateChartData(history);
+        }
+
+        async function fetchRecommendation(stayId, latestVitals) {
+            try {
+                const histPayload = (currentPatientData || []).slice(-64);
+                const res = await fetch(`${API_BASE}/patient/${stayId}/recommend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...latestVitals, history: histPayload })
+                });
+                
+                const data = await res.json();
+                currentRecommendation = data;
+                renderRecommendation(data);
+                
+                // Add twin simulation to chart
+                if(data.twin_simulation && data.twin_simulation.trajectory) {
+                    addSimulationToChart(data.twin_simulation);
+                }
+                
+                // Refresh audit log to show the new recommendation block
+                const auditRes = await fetch(`${API_BASE}/patient/${stayId}/audit_trail`);
+                const auditData = await auditRes.json();
+                updateAuditLog(auditData.trail);
+                
+            } catch (err) {
+                console.error("AI failed", err);
+                document.getElementById('ai-status').innerHTML = '<i class="fas fa-exclamation-triangle text-red-400"></i> Error';
+            }
+        }
+
+        function formatDelta(val) {
+            if (val > 0) return `<span class="text-emerald-400">+${val}</span>`;
+            if (val < 0) return `<span class="text-red-400">${val}</span>`;
+            return `<span class="text-slate-500">0</span>`;
+        }
+
+        function renderRecommendation(data) {
+            document.getElementById('rec-container').classList.remove('hidden');
+
+            const chip = document.getElementById('lstm-engine-chip');
+            const predEl = document.getElementById('lstm-val-pred-spo2');
+            const hypEl = document.getElementById('lstm-val-hypoxia');
+            const hintEl = document.getElementById('lstm-hint');
+
+            predEl.textContent = data.pred_next_spo2 != null ? Number(data.pred_next_spo2).toFixed(1) : '--';
+            hypEl.textContent = data.hypoxia_prob != null ? (Number(data.hypoxia_prob) * 100).toFixed(1) + '%' : '--';
+
+            if (data.lstm_forecast_source === 'lstm_keras') {
+                chip.textContent = 'Keras LSTM';
+                chip.className =
+                    'text-xs font-bold px-2 py-1 rounded-md bg-emerald-600/30 text-emerald-200 border border-emerald-500/50 shrink-0';
+                hintEl.textContent =
+                    'Dual-head LSTM (next SpO₂ + hypoxia risk) is driving the policy inputs. Values below are live model outputs.';
+            } else {
+                chip.textContent = 'Heuristic';
+                chip.className =
+                    'text-xs font-bold px-2 py-1 rounded-md bg-amber-600/25 text-amber-100 border border-amber-500/40 shrink-0';
+                const st = data.lstm_status || {};
+                hintEl.textContent =
+                    'Showing rule-based forecast (same numbers the API used before training). ' +
+                    (st.artifacts_found
+                        ? 'Artifacts found but model not loaded — check TensorFlow and /health lstm.load_error.'
+                        : 'No scaler/model under ml/ — follow RUNNING.md (run_phase1 + lstm_training).');
+            }
+
+            const statusEl = document.getElementById('ai-status');
+            if (data.alert_level === 'CRITICAL') {
+                statusEl.className = 'text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full border border-red-500/30 anim-pulse';
+                statusEl.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i> Critical Action Req.';
+            } else if (data.alert_level === 'WARNING') {
+                statusEl.className = 'text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full border border-yellow-500/30';
+                statusEl.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Warning';
+            } else {
+                statusEl.className = 'text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full border border-emerald-500/30';
+                statusEl.innerHTML = '<i class="fas fa-check-circle mr-1"></i> Stable';
+            }
+
+            document.getElementById('rec-peep').innerHTML = formatDelta(data.delta.PEEP);
+            document.getElementById('rec-fio2').innerHTML = formatDelta(data.delta.FiO2);
+            document.getElementById('rec-tv').innerHTML = formatDelta(data.delta.TidalVol);
+
+            const rationaleList = document.getElementById('rec-rationale');
+            rationaleList.innerHTML = data.rationale.map(r => `<li>${r}</li>`).join('');
+
+            const alertsDiv = document.getElementById('rec-alerts');
+            alertsDiv.innerHTML = data.safety_flags.map(f => 
+                `<div class="flex items-start text-red-400 bg-red-400/10 p-2 rounded border border-red-400/20">
+                    <i class="fas fa-shield-virus mt-0.5 mr-2"></i> <span>${f}</span>
+                </div>`
+            ).join('');
+            
+            // Render SHAP
+            if(data.shap_insights) {
+                const shapDiv = document.getElementById('rec-shap');
+                shapDiv.innerHTML = data.shap_insights.map(s => {
+                    const widthClass = Math.abs(s.impact) * 100 + "%";
+                    const bgClass = s.impact < 0 ? "bg-red-500/80" : "bg-emerald-500/80";
+                    return `
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-slate-300 w-24 truncate" title="${s.feature}">${s.feature}</span>
+                        <div class="flex-1 bg-slate-800 rounded-full h-1.5 ml-2 mr-2 flex ${s.impact < 0 ? 'justify-end' : 'justify-start'} overflow-hidden">
+                            <div class="${bgClass} h-1.5 rounded-full" style="width: ${widthClass}"></div>
+                        </div>
+                        <span class="text-slate-400 w-8 text-right">${(s.impact > 0 ? '+' : '')}${s.impact.toFixed(1)}</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        async function submitAction(actionType) {
+            const stayId = document.getElementById('patientSelect').value;
+            if(!stayId || !currentRecommendation) return;
+            
+            try {
+                await fetch(`${API_BASE}/patient/${stayId}/audit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: actionType,
+                        settings: currentRecommendation.proposed
+                    })
+                });
+                
+                // Refresh log
+                const auditRes = await fetch(`${API_BASE}/patient/${stayId}/audit_trail`);
+                const auditData = await auditRes.json();
+                updateAuditLog(auditData.trail);
+                
+                // Simple UI feedback
+                const btn = document.getElementById(`btn-${actionType}`);
+                const origHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> Logged';
+                setTimeout(() => btn.innerHTML = origHtml, 2000);
+                
+            } catch (err) {
+                console.error("Action failed", err);
+            }
+        }
+
+        /* --- UI Chart & Logging Logic --- */
+
+        function initChart() {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            mainChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Historical SpO₂',
+                            data: [],
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Predicted Next SpO₂ (Twin)',
+                            data: [],
+                            borderColor: '#a855f7',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 4,
+                            pointBackgroundColor: '#a855f7',
+                            tension: 0.2
+                        },
+                        {
+                            // Upper band (drawn first so the lower band can fill down to it)
+                            label: 'Twin upper band',
+                            data: [],
+                            borderColor: 'rgba(168, 85, 247, 0.0)',
+                            backgroundColor: 'rgba(168, 85, 247, 0.0)',
+                            pointRadius: 0,
+                            borderWidth: 0,
+                            fill: false,
+                            tension: 0.2,
+                            order: 3
+                        },
+                        {
+                            // Lower band — fills upward to the upper band index = 2
+                            label: 'Twin lower band',
+                            data: [],
+                            borderColor: 'rgba(168, 85, 247, 0.0)',
+                            backgroundColor: 'rgba(168, 85, 247, 0.18)',
+                            pointRadius: 0,
+                            borderWidth: 0,
+                            fill: '-1',
+                            tension: 0.2,
+                            order: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    color: '#94a3b8',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: {
+                            min: 70, max: 100,
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { maxTicksLimit: 10 }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartData(history) {
+            // Base historical data
+            const labels = history.map((_, i) => `T-${history.length - i}`);
+            const spo2Data = history.map(d => d.SpO2);
+
+            mainChart.data.labels = labels;
+            mainChart.data.datasets[0].data = spo2Data;
+            mainChart.data.datasets[1].data = []; // clear prediction
+            mainChart.data.datasets[2].data = []; // clear upper band
+            mainChart.data.datasets[3].data = []; // clear lower band
+            mainChart.update();
+        }
+
+        function addSimulationToChart(twinSim) {
+            const labels = [...mainChart.data.labels];
+            const histData = [...mainChart.data.datasets[0].data];
+            const predData = new Array(histData.length).fill(null);
+            const upperData = new Array(histData.length).fill(null);
+            const lowerData = new Array(histData.length).fill(null);
+
+            // The simulation connects to the last historical point
+            const last = histData[histData.length - 1];
+            predData[predData.length - 1] = last;
+            upperData[upperData.length - 1] = last;
+            lowerData[lowerData.length - 1] = last;
+
+            const upper = twinSim.upper_band || [];
+            const lower = twinSim.lower_band || [];
+
+            for (let i = 1; i < twinSim.trajectory.length; i++) {
+                labels.push(`+${i * 15}m`);
+                predData.push(twinSim.trajectory[i]);
+                upperData.push(upper[i] != null ? upper[i] : twinSim.trajectory[i]);
+                lowerData.push(lower[i] != null ? lower[i] : twinSim.trajectory[i]);
+                histData.push(null);
+            }
+
+            mainChart.data.labels = labels;
+            mainChart.data.datasets[0].data = histData;
+            mainChart.data.datasets[1].data = predData;
+            mainChart.data.datasets[2].data = upperData;
+            mainChart.data.datasets[3].data = lowerData;
+            mainChart.update();
+        }
+
+        /* --- Twin Replay Debug Panel --- */
+        function initTwinChart() {
+            const ctx = document.getElementById('twinChart').getContext('2d');
+            twinChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Replay SpO₂',
+                            data: [],
+                            borderColor: '#c084fc',
+                            backgroundColor: 'rgba(192, 132, 252, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            tension: 0.2,
+                            fill: false,
+                            order: 1
+                        },
+                        {
+                            label: 'Upper',
+                            data: [],
+                            borderColor: 'rgba(192, 132, 252, 0.0)',
+                            pointRadius: 0,
+                            borderWidth: 0,
+                            tension: 0.2,
+                            fill: false,
+                            order: 2
+                        },
+                        {
+                            label: 'Lower',
+                            data: [],
+                            borderColor: 'rgba(192, 132, 252, 0.0)',
+                            backgroundColor: 'rgba(192, 132, 252, 0.18)',
+                            pointRadius: 0,
+                            borderWidth: 0,
+                            fill: '-1',
+                            tension: 0.2,
+                            order: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    color: '#94a3b8',
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { min: 60, max: 100, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }
+                    }
+                }
+            });
+        }
+
+        function setTwinChip(text, mode) {
+            const chip = document.getElementById('twin-mode-chip');
+            chip.textContent = text;
+            const colors = {
+                deterministic: 'bg-emerald-600/30 text-emerald-200 border-emerald-500/50',
+                stochastic:    'bg-indigo-600/30 text-indigo-200 border-indigo-500/50',
+                error:         'bg-red-600/30 text-red-200 border-red-500/50',
+                idle:          'bg-slate-800 text-slate-400 border-slate-600',
+                running:       'bg-amber-600/30 text-amber-200 border-amber-500/50'
+            };
+            chip.className =
+                'text-xs font-mono px-2 py-1.5 rounded border ' +
+                (colors[mode] || colors.idle);
+        }
+
+        function fillTwinFromRecommendation() {
+            if (!currentRecommendation || !currentRecommendation.proposed) return;
+            document.getElementById('twin-peep').value = currentRecommendation.proposed.PEEP;
+            document.getElementById('twin-fio2').value = currentRecommendation.proposed.FiO2;
+            document.getElementById('twin-tv').value   = currentRecommendation.proposed.TidalVol;
+        }
+
+        async function runTwinReplay() {
+            const stayId = document.getElementById('patientSelect').value;
+            if (!stayId) {
+                setTwinChip('select a patient', 'error');
+                return;
+            }
+            const peep  = parseFloat(document.getElementById('twin-peep').value);
+            const fio2  = parseFloat(document.getElementById('twin-fio2').value);
+            const tv    = parseFloat(document.getElementById('twin-tv').value);
+            const steps = parseInt(document.getElementById('twin-steps').value, 10);
+            const noise = parseFloat(document.getElementById('twin-noise').value);
+            const seedRaw = document.getElementById('twin-seed').value;
+            const seed = seedRaw === '' ? null : parseInt(seedRaw, 10);
+
+            const proposed = { PEEP: peep, FiO2: fio2, TidalVol: tv };
+            const histPayload = (currentPatientData || []).slice(-32);
+            const currentSpO2 = histPayload.length
+                ? histPayload[histPayload.length - 1].SpO2
+                : null;
+
+            setTwinChip('running…', 'running');
+            try {
+                const body = {
+                    stay_id: parseInt(stayId, 10),
+                    history: histPayload,
+                    proposed: proposed,
+                    current_spo2: currentSpO2,
+                    steps: steps,
+                    noise_scale: noise
+                };
+                if (seed !== null && !Number.isNaN(seed)) body.seed = seed;
+
+                const res = await fetch(`${API_BASE}/twin/replay`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    setTwinChip(`HTTP ${res.status}`, 'error');
+                    console.error('twin/replay failed', errText);
+                    return;
+                }
+                const data = await res.json();
+                renderTwinReplay(data, proposed);
+
+                // Refresh audit log so the new TWIN_SIM block appears immediately
+                const auditRes = await fetch(`${API_BASE}/patient/${stayId}/audit_trail`);
+                const auditData = await auditRes.json();
+                updateAuditLog(auditData.trail);
+            } catch (err) {
+                console.error(err);
+                setTwinChip('network error', 'error');
+            }
+        }
+
+        function renderTwinReplay(data, proposed) {
+            setTwinChip(data.mode, data.mode === 'deterministic' ? 'deterministic' : 'stochastic');
+            const result = data.result || {};
+            const traj   = result.trajectory || [];
+            const upper  = result.upper_band || [];
+            const lower  = result.lower_band || [];
+            const labels = traj.map((_, i) => i === 0 ? 'now' : `+${i * 15}m`);
+
+            twinChart.data.labels = labels;
+            twinChart.data.datasets[0].data = traj;
+            twinChart.data.datasets[1].data = upper;
+            twinChart.data.datasets[2].data = lower;
+            twinChart.update();
+
+            const applied = result.applied || {};
+            document.getElementById('twin-applied').textContent =
+                `PEEP ${applied.PEEP} · FiO₂ ${applied.FiO2} · TV ${applied.TidalVol}`;
+
+            const meanEl  = document.getElementById('twin-mean');
+            const deltaEl = document.getElementById('twin-delta');
+            const uncEl   = document.getElementById('twin-unc');
+            const compEl  = document.getElementById('twin-comp');
+            meanEl.textContent  = result.mean_spo2 != null ? Number(result.mean_spo2).toFixed(2) : '—';
+            uncEl.textContent   = result.uncertainty != null ? '±' + Number(result.uncertainty).toFixed(2) : '—';
+            const ts = data.twin_state || {};
+            compEl.textContent  = ts.compliance_factor != null ? Number(ts.compliance_factor).toFixed(2) : '—';
+            const dv = result.delta_spo2;
+            if (dv == null) {
+                deltaEl.textContent = '—';
+                deltaEl.className = 'font-mono text-base text-slate-400';
+            } else if (dv > 0) {
+                deltaEl.textContent = '+' + Number(dv).toFixed(2);
+                deltaEl.className = 'font-mono text-base text-emerald-400';
+            } else if (dv < 0) {
+                deltaEl.textContent = Number(dv).toFixed(2);
+                deltaEl.className = 'font-mono text-base text-red-400';
+            } else {
+                deltaEl.textContent = '0.00';
+                deltaEl.className = 'font-mono text-base text-slate-400';
+            }
+
+            const riskEl   = document.getElementById('twin-risk');
+            const tvRiskEl = document.getElementById('twin-tvrisk');
+            const setBadge = (el, label, on) => {
+                el.textContent = `${label}: ${on ? 'YES' : 'no'}`;
+                el.className = 'px-2 py-0.5 rounded text-[10px] font-semibold border ' +
+                    (on
+                        ? 'bg-red-600/30 text-red-200 border-red-500/50'
+                        : 'bg-slate-800 text-slate-400 border-slate-700');
+            };
+            setBadge(riskEl,   'risk',    !!result.risk_flag);
+            setBadge(tvRiskEl, 'tv_risk', !!result.tv_risk);
+
+            // Detect clamp activation by comparing proposed vs applied
+            const clampWarn = document.getElementById('twin-clamp-warn');
+            const clamped = applied.PEEP != null && (
+                Math.abs(applied.PEEP - proposed.PEEP) > 0.05 ||
+                Math.abs(applied.FiO2 - proposed.FiO2) > 0.05 ||
+                Math.abs(applied.TidalVol - proposed.TidalVol) > 0.05
+            );
+            clampWarn.classList.toggle('hidden', !clamped);
+        }
+
+        function bindTwinPanel() {
+            const toggleBtn = document.getElementById('twin-toggle');
+            const panel = document.getElementById('twin-panel');
+            toggleBtn.addEventListener('click', () => {
+                const hidden = panel.classList.toggle('hidden');
+                toggleBtn.innerHTML = hidden
+                    ? '<i class="fas fa-chevron-down"></i> Show'
+                    : '<i class="fas fa-chevron-up"></i> Hide';
+                if (!hidden && twinChart === null) initTwinChart();
+            });
+            document.getElementById('twin-run').addEventListener('click', runTwinReplay);
+            document.getElementById('twin-fill-recommend').addEventListener('click', fillTwinFromRecommendation);
+        }
+
+        function updateAuditLog(trail) {
+            const list = document.getElementById('audit-list');
+            list.innerHTML = trail.map((block, i) => {
+                const date = new Date(block.timestamp).toLocaleTimeString();
+                let icon = 'fa-link';
+                let color = 'text-slate-400';
+                
+                if(block.event_type === 'RECOMMENDATION') { icon = 'fa-robot'; color = 'text-blue-400'; }
+                if(block.event_type === 'ACCEPT') { icon = 'fa-user-check'; color = 'text-emerald-400'; }
+                if(block.event_type === 'OVERRIDE') { icon = 'fa-user-edit'; color = 'text-yellow-400'; }
+                if(block.event_type === 'REJECT') { icon = 'fa-user-times'; color = 'text-red-400'; }
+                if(block.event_type === 'TWIN_SIM') { icon = 'fa-flask'; color = 'text-purple-400'; }
+                if(block.event_type === 'MODEL_INFER') { icon = 'fa-project-diagram'; color = 'text-indigo-400'; }
+                if(block.event_type === 'ALERT') { icon = 'fa-bell'; color = 'text-amber-400'; }
+                
+                return `
+                <div class="bg-slate-800/50 rounded border border-slate-700/50 p-3 text-sm flex gap-3 group relative hover:border-slate-600 transition-colors">
+                    <!-- Line connecting blocks -->
+                    ${i < trail.length - 1 ? '<div class="absolute left-[1.3rem] top-8 bottom-[-1rem] w-px bg-slate-700"></div>' : ''}
+                    
+                    <div class="mt-1 ${color}">
+                        <i class="fas ${icon}"></i>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-semibold text-slate-300">${block.event_type}</span>
+                            <span class="text-xs text-slate-500">${date}</span>
+                        </div>
+                        <div class="text-xs text-slate-400 mb-1 font-mono truncate" title="${block.payload_hash}">
+                            Payload: ${block.payload_hash.substring(0,16)}...
+                        </div>
+                         <div class="text-[10px] text-slate-500 font-mono truncate" title="${block.chain_hash}">
+                            Block Hash: ${block.chain_hash.substring(0,32)}...
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        async function verifyChain() {
+            try {
+                const res = await fetch(`${API_BASE}/audit/verify`);
+                const data = await res.json();
+                
+                const statusEl = document.getElementById('chainStatus');
+                if (data.valid) {
+                    statusEl.innerText = 'Chain Valid';
+                    statusEl.className = 'text-emerald-400';
+                } else {
+                    statusEl.innerText = 'Chain Tampered';
+                    statusEl.className = 'text-red-500 font-bold anim-pulse';
+                }
+            } catch(err) {
+                 console.error(err);
+            }
+        }
+
+        // Start
+        window.onload = init;
+
+    </script>
+</body>
+</html>

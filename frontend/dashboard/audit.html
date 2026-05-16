@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventilator OS - Audit & System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+    <div id="nav"></div>
+    <main class="page">
+        <section class="page-header">
+            <div>
+                <div class="eyebrow">Trust layer</div>
+                <h1>Audit & System Status</h1>
+                <p class="lede">Verify the blockchain-backed audit chain, inspect API health, and jump back to live patient recommendations or model evaluation.</p>
+            </div>
+            <div class="toolbar">
+                <button id="refresh" class="button"><i class="fas fa-rotate"></i> Refresh</button>
+                <a class="button secondary" href="index.html"><i class="fas fa-gauge-high"></i> Live Dashboard</a>
+            </div>
+        </section>
+
+        <section id="status" class="grid cols-3"></section>
+        <section class="grid cols-2" style="margin-top:16px;">
+            <article class="panel">
+                <h2 class="panel-title">Audit Chain</h2>
+                <div id="audit-chain" class="section-stack"></div>
+            </article>
+            <article class="panel">
+                <h2 class="panel-title">API Health</h2>
+                <div id="health" class="section-stack"></div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+const { nav, apiGet } = window.VentilatorApp;
+document.getElementById("nav").innerHTML = nav("audit");
+
+function card(label, value, note, cls = "") {
+    return `<div class="panel metric"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}</div><div class="metric-note">${note}</div></div>`;
+}
+
+function kv(obj) {
+    return `<div class="table-wrap"><table><tbody>${Object.entries(obj || {}).map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === "object" ? JSON.stringify(v) : v}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+async function loadAudit() {
+    const [verify, health, fiware] = await Promise.all([
+        apiGet("/audit/verify"),
+        apiGet("/health"),
+        apiGet("/fiware/status").catch(() => ({ enabled: false, health: { reachable: false } }))
+    ]);
+    document.getElementById("status").innerHTML = `
+        ${card("Chain", verify.valid ? "Valid" : "Invalid", verify.message || "Audit verification", verify.valid ? "good" : "bad")}
+        ${card("Dataset", health.dataset_index_loaded ? "Loaded" : "Simulator", `${health.index_rows || 0} indexed rows`, health.dataset_index_loaded ? "good" : "warn")}
+        ${card("FIWARE", fiware.enabled ? (fiware.health && fiware.health.reachable ? "Connected" : "Enabled") : "Disabled", fiware.base_url || "Local mode", fiware.enabled ? "good" : "muted")}
+    `;
+    document.getElementById("audit-chain").innerHTML = kv({
+        valid: verify.valid,
+        message: verify.message,
+        stats: verify.stats
+    });
+    document.getElementById("health").innerHTML = kv({
+        status: health.status,
+        csv_path: health.csv_path,
+        sample_stay_id: health.sample_stay_id,
+        lstm: health.lstm
+    });
+}
+
+document.getElementById("refresh").addEventListener("click", loadAudit);
+loadAudit().catch(err => {
+    document.getElementById("status").innerHTML = `<div class="panel bad">Could not load audit status: ${err.message}</div>`;
+});
+</script>
+</body>
+</html>

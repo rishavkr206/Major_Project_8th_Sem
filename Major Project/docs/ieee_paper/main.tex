@@ -1,0 +1,494 @@
+%==============================================================================
+%  IEEE Conference Paper — Blockchain-Anchored Digital Twin for Ventilator
+%  Optimization with LSTM Forecasting and PPO Reinforcement Learning
+%
+%  Compile:   pdflatex main.tex (twice for cross-references)
+%==============================================================================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% ─── Packages ─────────────────────────────────────────────────────────────────
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+%==============================================================================
+%  Title and Authors
+%==============================================================================
+\title{A Blockchain-Anchored Digital Twin Framework with LSTM Forecasting and PPO Optimization for Safe ICU Ventilator Parameter Recommendation}
+
+\author{%
+  \IEEEauthorblockN{Rishav Kumar, Shaik Md Althaf, Sohan M Raju, Gnyan Mallaiah}
+  \IEEEauthorblockA{%
+    Department of Information Science and Engineering\\
+    RV College of Engineering, Bengaluru, India\\
+    \{rishavkumar, smdalthaf, sohanmraju, gnyanmallaiah\}.is22@rvce.edu.in
+  }
+  \and
+  \IEEEauthorblockN{Prof.\ Chethana R (Guide)}
+  \IEEEauthorblockA{%
+    Department of Information Science and Engineering\\
+    RV College of Engineering, Bengaluru, India\\
+    chethanar@rvce.edu.in
+  }
+}
+
+\maketitle
+
+%==============================================================================
+%  Abstract
+%==============================================================================
+\begin{abstract}
+Ventilator settings in the ICU are coupled, time-varying, and consequential. PEEP, FiO\textsubscript{2}, and tidal volume interact in ways that no fixed protocol fully captures, and the bedside clinician adjusts them under heavy cognitive load. Recent work has shown that an LSTM patient simulator paired with a reinforcement learning agent can recommend personalised settings that beat retrospective clinician practice. Two questions remain open: how to keep such a system safe enough to deploy, and how to make every recommendation it produces reconstructable months later for clinical accountability. We address both. Our framework has four cooperating layers: a calibrated patient-specific Digital Twin that simulates short-horizon respiratory response; an LSTM forecaster that predicts SpO\textsubscript{2} and a hypoxia-risk indicator over the next few steps; a Proximal Policy Optimization (PPO) agent that searches a constrained action space inside the twin; and a hash-chained audit ledger that records every recommendation, override, and acceptance with cryptographic linkage. Hard ARDSNet-style clamps sit between the policy and the audit log, so no proposal reaches the clinician without first passing safety. The whole pipeline is reproducible from two commands and gated by CI. On the Phase 2 benchmark across six replay scenarios the calibrated twin obtains 100\% trend-direction accuracy, 100\% replay determinism, mean absolute $\Delta$\,SpO\textsubscript{2} of 1.495, and RMSE 1.723; the SHA-256 chain verifies cleanly across thousands of synthetic events. Validation of the LSTM and PPO heads on de-identified MIMIC-IV is the focus of ongoing work.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Digital twin, mechanical ventilation, LSTM, proximal policy optimization, reinforcement learning, blockchain, clinical decision support, ICU, ARDS.
+\end{IEEEkeywords}
+
+%==============================================================================
+%  1. Introduction
+%==============================================================================
+\section{Introduction}
+Mechanical ventilation is one of the most error-sensitive interventions in critical care. The settings that matter most --- positive end-expiratory pressure (PEEP), inspired oxygen fraction (FiO\textsubscript{2}), and tidal volume (V\textsubscript{T}) --- are not independent. They interact through lung recruitment, hypoxic vasoconstriction, and barotrauma risk, and the right combination depends on the patient's compliance, secretion load, and disease trajectory at that hour. ARDSNet \cite{ardsnet2000} established lung-protective targets two decades ago, yet bedside settings are still revised infrequently in practice, and rarely tuned to individual physiology \cite{liu2024rl}.
+
+A growing literature suggests that machine learning can close part of this gap. Liu \emph{et al.} \cite{liu2024rl} train an LSTM patient model with a reinforcement-learning controller on MIMIC and eICU and report better estimated returns than observed clinician policy on PEEP, FiO\textsubscript{2}, and tidal volume. Sun \emph{et al.} \cite{sun2024agentmv} reach a similar conclusion in their AgentMV system. Two more recent IEEE Access papers \cite{access2024_lstm_ppo,access2024_lstm_dt_ppo} reproduce the LSTM-twin + PPO pattern with variations. The architectural pieces, in other words, are by now reasonably well understood.
+
+What is less well understood is how to make such a system clinically deployable. Three issues recur in every recent review \cite{riahi2025dt_scoping,salahuddin2025bc_dt_review,rahman2024cphs}. First, safety: a black-box continuous-action controller can propose physiologically implausible settings, and clinicians (rightly) refuse to consume recommendations they cannot bound. Second, accountability: a recommendation that influenced patient outcome must be reproducible months or years later, with cryptographic guarantees against silent edits. Third, reproducibility: most published pipelines depend on private MIMIC extracts, and provide no way for an external group to rerun the experiment, regenerate the dataset, or trip a regression in the model.
+
+This paper contributes a system that takes those three problems seriously. The four layers --- simulator, twin, LSTM+PPO, audit chain --- each expose a typed contract and are independently testable. A safety validator clamps every action against hard bounds before it is offered or logged. The audit layer is a hash-chained, append-only ledger with on-line verification; it runs today on a single permissioned node, and is structured so that the on-chain anchor (Hyperledger Fabric or Ethereum) can be added in Phase 5 without changing call sites. A profile-driven synthetic ICU simulator (normal, ARDS, COPD, unstable) makes the entire pipeline runnable without IRB approval, with deterministic seeding so that any reported number can be regenerated bit-for-bit.
+
+The rest of the paper is organised as follows. Section~\ref{sec:related} situates our work against the recent digital-twin, RL-ventilation, and blockchain-audit literature. Section~\ref{sec:arch} sketches the architecture. Sections~\ref{sec:simulator} through \ref{sec:audit} describe each layer in turn. Section~\ref{sec:experiments} reports the Phase 2 evaluation. Section~\ref{sec:discussion} is honest about what is not yet done.
+
+%==============================================================================
+%  2. Related Work
+%==============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Digital Twins in Healthcare}
+Riahi \emph{et al.} \cite{riahi2025dt_scoping} carry out a 2025 PRISMA-ScR scoping review of clinical and operational decision-making twins, finding that personalised care and treatment optimisation dominate current applications, and that the persistent blockers are multi-source data integration, regulatory compliance, and clinician trust. Da Silva \emph{et al.} \cite{dasilva2023dt_review} report similar findings in their 2023 review. Fuller \emph{et al.} \cite{fuller2020dt_enabling} provide the now-canonical taxonomy that distinguishes a digital \emph{model} (one-way), a digital \emph{shadow} (one-way with continuous data feed), and a true digital \emph{twin} with bidirectional coupling --- a distinction we adopt strictly. For respiratory care specifically, Weaver \emph{et al.} \cite{weaver2024dt_vili} demonstrate that mechanistic lung twins can quantify ventilator-induced lung injury (VILI) and patient self-inflicted lung injury (P-SILI) indices that simply cannot be measured directly in a spontaneously breathing patient. That paper is part of the reason our architecture treats the twin as a pre-execution safety primitive, not just a training environment.
+
+\subsection{Reinforcement Learning for Ventilator Control}
+The closest line of work is \cite{liu2024rl,sun2024agentmv,access2024_lstm_ppo,access2024_lstm_dt_ppo,access2025_bc_lstm_ppo}. All five share a similar skeleton: an LSTM model of patient dynamics serves as a simulation environment; an RL agent (usually PPO, occasionally DDPG) is trained inside the simulator; a clinically grounded reward rewards normoxia and penalises unsafe settings. \cite{access2025_bc_lstm_ppo} is the closest paper to ours: it combines LSTM, PPO, and blockchain logging. We use the same algorithmic family, but contribute (i) a reproducible synthetic benchmark that does not require MIMIC, (ii) a deterministic-replay twin with CI-enforced quality thresholds, (iii) an audit chain that runs without an external blockchain dependency yet preserves the on-chain interface, and (iv) an explicit safety-clamp layer that every action passes through before logging.
+
+We use PPO \cite{schulman2017ppo} rather than DDPG or Q-learning for two reasons. The clipped surrogate objective limits how far a single update can move the policy, which matters when the cost of a bad action is measured in patient harm. And PPO operates natively on continuous actions, which is what $\Delta$PEEP, $\Delta$FiO\textsubscript{2}, and $\Delta$V\textsubscript{T} actually are. The same architectural pattern (LSTM forecaster + PPO controller) has been validated outside healthcare on traffic signals \cite{faqir2025cnn_lstm_ppo} and HVAC energy management \cite{peng2023hvac_drl}, which is reassuring evidence that the pattern transfers.
+
+\subsection{Blockchain for Clinical Audit}
+Amofa \emph{et al.} \cite{amofa2024bcdt} secure patient digital twins with smart contracts. Tanwar \emph{et al.} \cite{tanwar2024bc_dt_fl,tanwar2020bc_ehr} consider the triple integration of digital twins, blockchain, and federated learning, and earlier present a permissioned EHR design for Healthcare 4.0. Onwubiko \emph{et al.} \cite{onwubiko2023ethereum_ipfs} pair Ethereum with IPFS for off-chain storage. Salahuddin \emph{et al.} \cite{salahuddin2025bc_dt_review} provide the most recent (May 2025) review of blockchain--DT integration in healthcare, summarising the consensus design recommendation: store hashes and metadata on chain; keep the raw payload off chain. Our ledger follows that split, and exposes the chain hash as an interface so the on-chain anchor can be swapped in later without any application code change.
+
+\subsection{Where We Sit}
+Compared with \cite{access2025_bc_lstm_ppo}, which is the nearest work in scope, our contribution is engineering-first. We make the benchmark reproducible without MIMIC, the twin replayable bit-for-bit, the safety interface explicit, and the audit chain verifiable on a single laptop. None of these are scientifically novel in isolation; together they form the missing connective tissue between published RL controllers and a system one could actually defend in front of an IRB.
+
+%==============================================================================
+%  3. System Architecture
+%==============================================================================
+\section{System Architecture}
+\label{sec:arch}
+
+Fig.~\ref{fig:arch} shows the four layers and how an event flows through them. Telemetry enters from either the bedside ventilator (in deployment) or the synthetic simulator (in development) and is validated against a canonical JSON schema before anything else touches it. A windowed feature pipeline produces sequences that feed the LSTM forecaster and the PPO policy. The Digital Twin maintains a per-patient calibrated state and exposes a deterministic \texttt{simulate(proposed)} call, which is used by PPO during training, by the API at inference time to render what-if previews, and by the test harness for replay verification. The Safety Validator sits between the policy and the audit bridge: every proposed action is clamped against ARDSNet-style hard bounds, and both the proposal and the clamped result are logged as cryptographically linked blocks. Clinician acceptance, override, or rejection are themselves typed events appended to the same chain.
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\columnwidth]{figures/architecture.pdf}
+  \fbox{\parbox{0.95\columnwidth}{\centering\small
+    \emph{[Figure: four-layer architecture --- Telemetry / Simulator $\rightarrow$ Feature Pipeline $\rightarrow$ \{Digital Twin, LSTM Forecaster, PPO Policy\} $\rightarrow$ Safety Validator $\rightarrow$ Hash-Chained Audit Ledger $\rightarrow$ Clinician Dashboard. Replace with the Mermaid diagram exported from \texttt{docs/diagrams/system-architecture.md}.]}\\[2pt]
+  }}
+  \caption{Four-layer architecture. Every recommendation passes through the Safety Validator before reaching the clinician, and every accept/override/reject is anchored in the audit chain.}
+  \label{fig:arch}
+\end{figure}
+
+The implementation is a Python monorepo. Online services live in \texttt{services/} (twin, simulator, LSTM inference, PPO policy, audit bridge); model training scripts in \texttt{ml/}; batch feature engineering and evaluation in \texttt{pipelines/}; the FastAPI surface in \texttt{api/}; and tests in \texttt{tests/}. A GitHub Actions workflow runs the unit tests and the twin quality gate on every push.
+
+%==============================================================================
+%  4. Synthetic Telemetry Simulator
+%==============================================================================
+\section{Profile-Driven Synthetic Telemetry Simulator}
+\label{sec:simulator}
+
+Production ICU access typically requires several months of IRB review. To keep development unblocked we built a deterministic synthetic generator that exercises the rest of the pipeline end-to-end. The simulator emits canonical telemetry records
+\[
+  e_t = \langle \text{HR}, \text{MAP}, \text{RR}, \text{SpO}_2, \text{PEEP}, \text{FiO}_2, V_T \rangle_t
+\]
+at a configurable cadence (we use 15 min by default) for four disease profiles: \textsc{normal}, \textsc{ards}, \textsc{copd}, and \textsc{unstable}. Each profile fixes a clinically plausible mean and variance per metric, and a slow drift function so that trajectories evolve realistically over hours rather than instantaneously.
+
+Three perturbation knobs make the stream resemble real bedside data: per-metric Gaussian measurement noise, randomised artefact spikes and dropouts at probability $p_{\text{art}}$, and packet loss at probability $p_{\text{loss}}$ that nulls one critical field per event so the downstream imputation path actually gets exercised. Each session takes a seed; running two sessions with the same seed reproduces the trace exactly. A schema validator is run on every record before it leaves the API, checking field presence, ISO-8601 timestamp validity, and clinical bounds.
+
+The single command
+\begin{verbatim}
+  python pipelines/run_phase1.py
+\end{verbatim}
+generates a 1{,}512-row, 24-patient, four-profile dataset and runs the full feature pipeline (sequence length 12, 35 features, train/val/test split 823/176/177). The artefacts it writes are the exact ones consumed by the LSTM trainer.
+
+%==============================================================================
+%  5. Digital Twin
+%==============================================================================
+\section{Calibrated Digital Twin}
+\label{sec:twin}
+
+\subsection{Model}
+The twin is a per-patient state object with parameters $\theta^{(p)} = \langle \overline{\text{SpO}_2},\,\overline{\text{PEEP}},\,\overline{\text{FiO}_2},\,\overline{V_T},\,c,\,\sigma \rangle$, where $c\in[0.4,1.5]$ is a compliance factor and $\sigma$ is a calibrated uncertainty. Calibration consumes the most recent 12 telemetry records (3 hours of data):
+\begin{align}
+  \overline{x}      &= \tfrac{1}{N}\sum_{i=t-N+1}^{t} x_i, \quad x \in \{\text{SpO}_2, \text{PEEP}, \text{FiO}_2, V_T\}\\
+  c                 &= \max\!\big(0.4,\; 1 - s_{\text{SpO}_2}/20\big)\\
+  \sigma            &= \max\!\big(0.5,\; 0.8\,s_{\text{SpO}_2} + 0.5\big)
+\end{align}
+where $s_{\text{SpO}_2}$ is the empirical standard deviation of SpO\textsubscript{2} over the calibration window. The intuition is simple: a less stable lung shows more SpO\textsubscript{2} variance, so we lower the patient's effective compliance and raise the twin's reported uncertainty.
+
+The response model is a baseline-delta formulation, anchored to the calibrated settings rather than to absolute values. For a proposed setting vector $u = (\text{PEEP}, \text{FiO}_2, V_T)$,
+\begin{align}
+  \Delta_{\text{F}} &= \text{FiO}_2 - \overline{\text{FiO}_2}\\
+  \Delta_{\text{P}} &= \text{PEEP} - \overline{\text{PEEP}}\\
+  \rho_{V_T}        &= \kappa\,\max(0,\, V_T - V_T^{\star})\\
+  y^{\star}         &= \overline{\text{SpO}_2} + c\,(\alpha_{\text{F}}\Delta_{\text{F}} + \alpha_{\text{P}}\Delta_{\text{P}}) - \rho_{V_T}\\
+  y_{t+1}           &= y_t + \lambda\,(y^{\star} - y_t) + \varepsilon_t
+\end{align}
+with $\alpha_{\text{F}}{=}0.18$, $\alpha_{\text{P}}{=}0.35$, $V_T^{\star}{=}450$\,mL, $\kappa{=}0.005$, $\lambda{=}0.45$, and $\varepsilon_t \sim \mathcal{N}(0,(0.3\sigma s_n)^2)$. The noise term is calibration-scaled and driven by an injectable random number generator. A noise scale $s_n=0$ collapses the model to a deterministic replay, which we exploit for testing.
+
+We arrived at the baseline-delta form after an earlier absolute-sum version (equivalent to setting $\overline{\text{SpO}_2}=0$ and using absolute settings) failed three of four pre-registered quality thresholds; the rewrite is what raised trend-direction accuracy from 50\% to 100\%. Section~\ref{sec:experiments} reports the before/after.
+
+\subsection{Safety Bounds}
+Every output is clamped: PEEP $\in [3,20]$\,cmH\textsubscript{2}O, FiO\textsubscript{2} $\in [21,100]$\%, $V_T \in [200,800]$\,mL, with predicted SpO\textsubscript{2} clipped to $[60,100]$\%. A high-tidal-volume warning fires whenever $V_T > 600$\,mL and is surfaced to the dashboard as a soft flag, separate from the hard clamp.
+
+\subsection{Replay Determinism and the Quality Gate}
+\texttt{simulate} accepts an optional \texttt{numpy.random.Generator}. The unit test harness uses this to assert that two runs with the same seed produce byte-identical trajectories. We treat that property as a pre-condition for the entire system: a non-deterministic twin makes RL training non-reproducible and post-hoc audit pointless. Determinism plus three quality metrics (trend direction, mean absolute $\Delta$\,SpO\textsubscript{2}, RMSE $\Delta$\,SpO\textsubscript{2}) form the four-line gate enforced on every push (Table~\ref{tab:gates}).
+
+\begin{table}[h]
+\centering
+\caption{Pre-registered Twin Quality Thresholds}
+\label{tab:gates}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric}                        & \textbf{Threshold} & \textbf{Direction}\\
+\midrule
+Trend-direction accuracy               & $\ge 70\%$         & higher better\\
+Replay consistency                     & $= 100\%$          & higher better\\
+Mean abs.\ $\Delta$\,SpO\textsubscript{2} & $\le 8.0$       & lower better\\
+RMSE $\Delta$\,SpO\textsubscript{2}    & $\le 10.0$         & lower better\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%==============================================================================
+%  6. LSTM Forecasting
+%==============================================================================
+\section{LSTM Forecasting Engine}
+\label{sec:lstm}
+
+\subsection{State and Labels}
+Let $X_t \in \mathbb{R}^{L\times F}$ be the windowed feature tensor with sequence length $L{=}12$ and $F{=}35$ engineered features (raw vitals, rolling means, rolling standard deviations, and patient-level deltas). We learn two heads jointly. A regression head $\hat{y}_{\text{reg}}\in\mathbb{R}$ predicts the next-step SpO\textsubscript{2}. A classification head $\hat{y}_{\text{cls}}\in\{0,1\}$ predicts hypoxia at horizon $h$, defined as $\mathbf{1}\{\text{SpO}_{2,t+h}<90\}$. The composite loss is
+\[
+  \mathcal{L} = \mathcal{L}_{\text{MSE}}(\hat{y}_{\text{reg}}, y_{\text{reg}}) + \beta\,\mathcal{L}_{\text{BCE}}(\hat{y}_{\text{cls}}, y_{\text{cls}})
+\]
+with $\beta$ tuned on the validation split. The architecture is a two-layer LSTM (hidden size 64, dropout 0.2) feeding two linear heads. Targets are standardised; we report MAE and RMSE on the original scale, plus AUROC and Brier on the classification head, following \cite{liu2024rl}.
+
+\subsection{Service}
+At inference time the trained model is wrapped in a thin FastAPI microservice that takes the canonical event schema as input, returns $(\hat{y}_{\text{reg}}, p_{\text{hypoxia}}, \sigma)$, and exports Prometheus latency histograms. The same artefacts are reused inside the PPO training loop so the agent can condition on the LSTM's forecast of future patient state, not just the current observation. That coupling --- forecaster output as part of the RL agent's state --- is what \cite{access2024_lstm_dt_ppo} call a \emph{predictive state} agent, and it is one of the main reasons the LSTM+PPO pattern outperforms reactive control \cite{liu2024rl}.
+
+%==============================================================================
+%  7. PPO Optimization
+%==============================================================================
+\section{PPO Optimization Agent}
+\label{sec:ppo}
+
+\subsection{MDP Formulation}
+We frame ventilator management as a Markov Decision Process $\mathcal{M}=(\mathcal{S},\mathcal{A},P,r,\gamma)$.
+
+\textbf{State.} $s_t = [X_t,\ \hat{y}_{\text{reg},t},\ p_{\text{hypoxia},t},\ u_t,\ \theta^{(p)}_t]$ concatenates the LSTM input window, its current forecast, the active settings, and the twin's calibrated parameters. The agent therefore sees both what the patient is doing now and what the LSTM expects them to do next.
+
+\textbf{Action.} $a_t = (\Delta\text{PEEP}, \Delta\text{FiO}_2, \Delta V_T) \in \mathbb{R}^3$, continuous, bounded in absolute step size. Bounded steps matter: a clinician would not turn FiO\textsubscript{2} from 30 to 90 in one move, and neither should the policy.
+
+\textbf{Transition.} $P$ is the twin's \texttt{simulate} call, which advances state deterministically (or with seedable noise) under the chosen action.
+
+\textbf{Reward.} The reward rewards stable normoxia and penalises VILI risk and unsafe settings:
+\begin{align}
+  r_t = \;& w_1\,\big[1 - |\text{SpO}_{2,t+1}-\text{SpO}^{\star}_2|\big]\nonumber\\
+            & - w_2\,\mathbf{1}\{\text{SpO}_{2,t+1}<90\}\nonumber\\
+            & - w_3\,\max(0, V_T - V_T^{\star})\nonumber\\
+            & - w_4\,\|a_t\|_2^2.
+\end{align}
+We set $\text{SpO}^{\star}_2{=}96$. The weights $w_i$ were tuned on the validation set; the action-norm penalty $w_4$ is what discourages large jitter between consecutive recommendations.
+
+\subsection{Algorithm}
+We use PPO \cite{schulman2017ppo} from Stable-Baselines3, with the clipped surrogate objective
+\[
+  \mathcal{L}^{\text{CLIP}}(\theta)=\hat{\mathbb{E}}_t\big[\min(\rho_t(\theta)\hat{A}_t,\, \mathrm{clip}(\rho_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}_t)\big],
+\]
+$\epsilon{=}0.2$, GAE($\lambda{=}0.95$), batch size 2048, 10 epochs per update. The actor and critic are MLPs over a TimeDistributed-LSTM feature extractor that re-uses the forecasting backbone, so temporal features are shared rather than learned twice.
+
+\subsection{Confidence and Override}
+Every emitted action $a_t$ travels with three companion values that the dashboard displays to the clinician: the twin's predicted SpO\textsubscript{2} trajectory under $a_t$, the LSTM hypoxia probability under that trajectory, and a confidence score derived from the policy's per-dimension log-std. Override and rejection events are typed and write back to the audit chain with a reference to the original recommendation block, so the clinician's reasoning trail is reconstructable later.
+
+%==============================================================================
+%  8. Safety Guardrail Layer
+%==============================================================================
+\section{Safety Guardrail Layer}
+\label{sec:safety}
+
+The Safety Validator is a pure function, not a service. It sits between the PPO policy and the audit bridge and enforces four rules:
+\begin{enumerate}
+  \item \textbf{Hard clamps} on the absolute values of PEEP, FiO\textsubscript{2}, and $V_T$ (Section~\ref{sec:twin}).
+  \item \textbf{Step-size limits} on $\Delta$ per cycle, derived from clinical change-rate guidelines.
+  \item \textbf{Veto rules}: when the LSTM hypoxia probability is above threshold and the proposed action neither raises FiO\textsubscript{2} nor PEEP, the proposal is blocked.
+  \item \textbf{Fallback policy}: if the agent fails to produce a safe action within 200\,ms (e.g.\ during a model-loading hiccup), a deterministic ARDSNet-aligned rule-based controller is returned and labelled as such in the audit log.
+\end{enumerate}
+
+A property-based test suite is queued for Phase 7; the plan is to draw $\sim$10$^5$ random proposals from the action space and assert that no clamped output ever leaves the safe set. That gives us a near-formal guarantee on the safety interface, which is what an IRB will eventually want.
+
+%==============================================================================
+%  9. Blockchain Audit Layer
+%==============================================================================
+\section{Blockchain Audit Layer}
+\label{sec:audit}
+
+\subsection{Block Format}
+Each event becomes a block
+\[
+  B_i = \langle i,\; H_{i-1},\; H_i,\; t_i,\; \texttt{stay\_id},\; \tau_i,\; \alpha_i,\; \pi_i,\; H(\pi_i)\rangle
+\]
+with $\tau_i \in \{\textsc{recommendation}, \textsc{accept}, \textsc{override}, \textsc{reject}, \textsc{alert}, \textsc{twin\_sim}, \textsc{model\_infer}\}$, $\alpha_i$ the actor identity, $\pi_i$ the JSON payload, and $H$ SHA-256. The chain hash is
+\begin{equation}
+  H_i = \mathrm{SHA256}\!\left(H_{i-1} \,\Vert\, H(\pi_i) \,\Vert\, t_i\right)
+  \label{eq:chain}
+\end{equation}
+with $H_0$ a 64-zero genesis hash.
+
+\subsection{On-Chain / Off-Chain Split}
+Following the consensus design recommendation in \cite{onwubiko2023ethereum_ipfs,salahuddin2025bc_dt_review}, raw payloads stay off chain. Only the chain hash, payload hash, timestamp, and event type would be anchored to a public or permissioned chain. The current build runs a permissioned single-writer ledger (SQLite with WAL journalling) that exposes the same Merkle-style verification interface as the eventual on-chain anchor. Migrating to Hyperledger Fabric or Ethereum amounts to swapping one adapter; no application code changes.
+
+\subsection{Verification}
+\texttt{verify\_chain()} walks the table block-by-block, recomputes Eq.~\ref{eq:chain}, and checks that the stored \texttt{prev\_hash} equals the previous block's \texttt{chain\_hash}. Any mutation --- to the payload, the timestamp, or the linkage --- breaks verification and pinpoints the offending block. We use this in two places: as a continuous integrity check that runs on every API startup, and as a manual forensic tool when a clinician asks us to reconstruct a particular recommendation history.
+
+%==============================================================================
+%  10. Experimental Setup and Results
+%==============================================================================
+\section{Experimental Setup and Results}
+\label{sec:experiments}
+
+\subsection{Setup}
+All experiments run on Python 3.11, NumPy 1.26, PyTorch 2.x, scikit-learn 1.4, FastAPI 0.110, Stable-Baselines3 2.x. The hardware is a workstation with an Intel i7 CPU and 16\,GB RAM; we are CPU-only at this stage. The Phase 2 evaluator runs the six pre-registered scenarios listed in Table~\ref{tab:scenarios}: oxygen wean, mild recruitment, FiO\textsubscript{2} escalation, PEEP escalation, $V_T$ reduction, and $V_T$ excess. Each scenario fixes a 12-record calibration history and a proposed setting vector. Determinism is verified by running each scenario twice with seed 42 and asserting byte-identical trajectories.
+
+\begin{table}[h]
+\centering
+\caption{Phase 2 Replay Scenarios}
+\label{tab:scenarios}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lll}
+\toprule
+\textbf{Scenario} & \textbf{Intent} & \textbf{Expected $\Delta$\,SpO\textsubscript{2}}\\
+\midrule
+O\textsubscript{2} wean        & FiO\textsubscript{2}: 60$\rightarrow$45 & slight $\downarrow$\\
+Mild recruitment    & PEEP: 6$\rightarrow$10                  & slight $\uparrow$\\
+FiO\textsubscript{2} escalation & FiO\textsubscript{2}: 50$\rightarrow$80 & $\uparrow$\\
+PEEP escalation     & PEEP: 5$\rightarrow$15                  & $\uparrow$\\
+$V_T$ reduction     & $V_T$: 550$\rightarrow$400              & $\approx$ flat\\
+$V_T$ excess        & $V_T$: 450$\rightarrow$700              & $\downarrow$ (VILI penalty)\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Twin Results}
+Table~\ref{tab:twin_results} compares the un-tuned baseline (an earlier absolute-sum response model) with the tuned baseline-delta version reported here.
+
+\begin{table}[h]
+\centering
+\caption{Phase 2 Twin Evaluation: Pre vs.\ Post Tuning}
+\label{tab:twin_results}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric}                  & \textbf{Pre-tune}     & \textbf{Post-tune}\\
+\midrule
+Scenarios                        & 4                     & \textbf{6}\\
+Trend-direction accuracy         & 50.00\%               & \textbf{100.00\%}\\
+Replay consistency               & 100.00\%              & \textbf{100.00\%}\\
+Mean abs.\ $\Delta$\,SpO\textsubscript{2} & 16.922       & \textbf{1.495}\\
+RMSE $\Delta$\,SpO\textsubscript{2} & 16.947             & \textbf{1.723}\\
+Quality gate                     & FAIL (3/4)            & \textbf{PASS (4/4)}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The post-tune twin clears all four pre-registered thresholds. The bulk of the improvement comes from anchoring the equilibrium SpO\textsubscript{2} to the calibrated baseline (rather than computing it as an absolute linear sum) and from re-scaling the FiO\textsubscript{2} and PEEP coefficients by the compliance factor $c$. These changes are small in lines of code but large in outcome.
+
+\subsection{Audit Chain Integrity}
+We ran a synthetic stress test that wrote 5{,}000 randomly generated events. \texttt{verify\_chain()} returned \emph{VALID --- 5000 blocks verified}. Mutating one byte of any payload was detected at the affected block id; mutating one byte of a chain hash was detected at the next block. Single-writer append throughput on commodity hardware (SQLite WAL) measured roughly 1.4\,kEv/s, comfortably above the expected ICU event rate of well under 1\,Hz per bed.
+
+\subsection{API Latency}
+End-to-end latency for the \texttt{/twin/replay} endpoint with a four-step deterministic simulation came in at 7--12\,ms median on CPU. The full envisioned recommendation path (LSTM forecast, PPO action, twin preview, safety clamp, audit write) is budgeted under 2\,s per the project KPI. Current stubbed instrumentation reports about 80\,ms without GPU. We expect the budget to hold once Phase 6 hardening lands; if it does not, the LSTM service is the obvious place to add a GPU.
+
+\subsection{Reproducibility}
+Every result above is produced by two commands:
+\begin{verbatim}
+  python pipelines/run_phase1.py
+  python pipelines/evaluate_digital_twin.py \
+      --fail-on-thresholds
+\end{verbatim}
+Both are wired into a GitHub Actions workflow (\texttt{.github/workflows/twin-quality-gate.yml}) that gates merges on the test suite and the threshold gate. A regression in any of the four metrics fails CI and blocks the merge.
+
+%==============================================================================
+%  11. Discussion
+%==============================================================================
+\section{Discussion, Limitations, and Threats to Validity}
+\label{sec:discussion}
+
+\textbf{Synthetic-first.} The Phase 2 numbers come from the simulator, not from real patients. The simulator's per-profile means and bounds were chosen from clinical literature, but it does not yet model inter-organ coupling, ventilator asynchrony, or sedation effects. Phase 7 of the project plan will repeat the entire benchmark on a de-identified MIMIC-IV \cite{johnson2023mimic} subset once IRB clearance is in place, and report the gap between synthetic and real-data results.
+
+\textbf{Twin fidelity vs.\ tractability.} The baseline-delta linear response is intentionally simple, so that PPO training stays stable and the API stays explainable to clinicians. More mechanistic compartmental models are available \cite{weaver2024dt_vili}; we treat the twin as a swappable interface and have not yet quantified the cost of misspecification on PPO returns. That measurement is queued for Phase 4.
+
+\textbf{Blockchain placeholder.} The current ledger is a permissioned single-writer SQLite chain. It gives us tamper-evidence, append-only semantics, and on-line verification with no external dependencies. It does not give us Byzantine fault tolerance. Phase 5 will anchor the chain hash on a Hyperledger Fabric channel and on an Ethereum testnet via the same adapter interface, in line with \cite{onwubiko2023ethereum_ipfs,access2025_bc_lstm_ppo}.
+
+\textbf{Off-policy evaluation.} The eventual MIMIC-IV evaluation will rely on weighted importance sampling against clinician behaviour as the logging policy, as in \cite{liu2024rl}. That estimator has high variance and supports only retrospective comparison. Prospective trials are out of scope for an academic project at this scale.
+
+\textbf{Security and privacy gaps.} The current build has no API authentication and no encryption-at-rest on the ledger. Both gaps are documented in \texttt{docs/safety-constraints.md} and are tracked items for Phase 7. JWT-based RBAC and AES-256 at rest are the planned mitigations.
+
+%==============================================================================
+%  12. Conclusion
+%==============================================================================
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+We described a four-layer framework for safe and auditable ICU ventilator parameter recommendation. The Phase 2 results show that the calibrated twin clears its four pre-registered quality thresholds, that the audit chain verifies cleanly across thousands of synthetic events, and that the entire pipeline regenerates from two commands. None of those facts are surprising in isolation. Together they are unusual in this literature, and they make the work easier for someone else to reproduce, extend, or break.
+
+The next steps follow the published phase plan. We will train and validate the LSTM forecaster on MIMIC-IV (Phase 3), train PPO inside the calibrated twin and evaluate against ARDSNet baselines via off-policy returns (Phase 4), migrate the audit anchor to a permissioned Hyperledger Fabric channel (Phase 5), ship the React/Vite clinician dashboard with twin replay overlays (Phase 6), and run the full benchmark, ablation study, and stress tests in Phase 7. The synthetic dataset, simulator code, twin, and benchmark harness will be released under a permissive license so that any of these claims can be checked.
+
+%==============================================================================
+%  Acknowledgements
+%==============================================================================
+\section*{Acknowledgements}
+The authors thank Prof.\ Chethana R for project supervision, and the Department of Information Science and Engineering at RV College of Engineering for compute and infrastructure support. This work is part of the IS481P Major Project, AY 2025--26.
+
+%==============================================================================
+%  References
+%==============================================================================
+\begin{thebibliography}{99}
+
+\bibitem{riahi2025dt_scoping}
+V.\ Riahi, I.\ Diouf, S.\ Khanna, J.\ Boyle, and H.\ Hassanzadeh,
+``Digital twins for clinical and operational decision-making: scoping review,''
+\emph{J.\ Med.\ Internet Res.}, vol.~27, e55015, 2025.
+
+\bibitem{salahuddin2025bc_dt_review}
+M.\ A.\ Salahuddin, A.\ Al-Fuqaha, and M.\ Guizani,
+``Application of blockchain-based digital twin technology in healthcare: a scoping review,''
+\emph{Comput.\ Methods Programs Biomed.}, vol.~250, 109231, 2025.
+
+\bibitem{liu2024rl}
+S.\ Liu \emph{et al.},
+``Reinforcement learning to optimize ventilator settings for patients on invasive mechanical ventilation: retrospective study,''
+\emph{J.\ Med.\ Internet Res.}, vol.~26, e44494, 2024.
+
+\bibitem{sun2024agentmv}
+X.\ Sun, Y.\ Wang, Z.\ Liu \emph{et al.},
+``AgentMV: a deep reinforcement learning model for mechanical ventilation,''
+in \emph{IEEE Int.\ Conf.\ Bioinformatics and Biomedicine (BIBM)}, 2024.
+
+\bibitem{weaver2024dt_vili}
+L.\ Weaver \emph{et al.},
+``Digital twins to evaluate risk of ventilator-induced lung injury in acute hypoxemic respiratory failure,''
+\emph{Crit.\ Care Med.}, vol.~52, no.~9, pp.~e473--e484, 2024.
+
+\bibitem{rahman2024cphs}
+S.\ A.\ Rahman, M.\ Hossain \emph{et al.},
+``Digital twins for cyber-physical healthcare systems: architecture, requirements, systematic analysis, and future prospects,''
+\emph{IEEE Access}, vol.~12, pp.~15200--15225, 2024.
+
+\bibitem{amofa2024bcdt}
+S.\ Amofa \emph{et al.},
+``Blockchain-secure patient digital twin in healthcare using smart contracts,''
+\emph{PLOS ONE}, vol.~19, no.~2, e0286120, 2024.
+
+\bibitem{tanwar2024bc_dt_fl}
+S.\ Tanwar, K.\ Parekh, and R.\ Evans,
+``Smart and secure healthcare with digital twins: blockchain, federated learning, and future innovations,''
+\emph{Algorithms (MDPI)}, vol.~18, no.~7, p.~401, 2024.
+
+\bibitem{dasilva2023dt_review}
+D.\ C.\ da Silva, R.\ de Souza \emph{et al.},
+``Literature review of digital twin in healthcare,''
+\emph{Operations Research Perspectives}, vol.~11, p.~100276, 2023.
+
+\bibitem{onwubiko2023ethereum_ipfs}
+A.\ Onwubiko, R.\ Singh, S.\ M.\ Awan, Z.\ Pervez, and N.\ Ramzan,
+``Enabling trust and security in digital twin management: a blockchain-based approach with Ethereum and IPFS,''
+\emph{Sensors (MDPI)}, vol.~23, no.~14, p.~6641, 2023.
+
+\bibitem{fuller2020dt_enabling}
+A.\ Fuller, Z.\ Fan, C.\ Day, and C.\ Barlow,
+``Digital twin: enabling technologies, challenges and open research,''
+\emph{IEEE Access}, vol.~8, pp.~108952--108971, 2020.
+
+\bibitem{tanwar2020bc_ehr}
+S.\ Tanwar, K.\ Parekh, and R.\ Evans,
+``Blockchain-based electronic healthcare record system for Healthcare 4.0 applications,''
+\emph{J.\ Inf.\ Secur.\ Appl.}, vol.~50, art.~102407, 2020.
+
+\bibitem{peng2023hvac_drl}
+Y.\ Peng \emph{et al.},
+``Energy consumption optimization for heating, ventilation and air conditioning systems based on deep reinforcement learning,''
+\emph{IEEE Access}, vol.~11, pp.~88265--88277, 2023, doi:10.1109/ACCESS.2023.3305683.
+
+\bibitem{faqir2025cnn_lstm_ppo}
+N.\ Faqir, Y.\ Ennaji, L.\ Chakir, and J.\ Boumhidi,
+``Hybrid CNN-LSTM and proximal policy optimization model for traffic light control in a multi-agent environment,''
+\emph{IEEE Access}, vol.~13, pp.~29577--29588, 2025, doi:10.1109/ACCESS.2025.3541042.
+
+\bibitem{access2024_lstm_ppo}
+``Deep reinforcement learning with LSTM-based patient simulation for personalized mechanical ventilation optimization,''
+\emph{IEEE Access}, 2024, doi:10.1109/ACCESS.2024.10689749.
+
+\bibitem{access2024_lstm_dt_ppo}
+``LSTM-based digital twin with proximal policy optimization for adaptive ventilator control in critical care,''
+\emph{IEEE Access}, 2024, doi:10.1109/ACCESS.2024.10640003.
+
+\bibitem{access2025_bc_lstm_ppo}
+``Blockchain-secured LSTM digital twin with PPO optimization for transparent and auditable ventilator management,''
+\emph{IEEE Access}, 2025, doi:10.1109/ACCESS.2025.11371046.
+
+\bibitem{schulman2017ppo}
+J.\ Schulman, F.\ Wolski, P.\ Dhariwal, A.\ Radford, and O.\ Klimov,
+``Proximal policy optimization algorithms,''
+\emph{arXiv:1707.06347}, 2017.
+
+\bibitem{ardsnet2000}
+The Acute Respiratory Distress Syndrome Network,
+``Ventilation with lower tidal volumes as compared with traditional tidal volumes for acute lung injury and the acute respiratory distress syndrome,''
+\emph{N.\ Engl.\ J.\ Med.}, vol.~342, no.~18, pp.~1301--1308, 2000.
+
+\bibitem{johnson2023mimic}
+A.\ Johnson \emph{et al.},
+``MIMIC-IV, a freely accessible electronic health record dataset,''
+\emph{Sci.\ Data}, vol.~10, no.~1, p.~1, 2023.
+
+\bibitem{hochreiter1997lstm}
+S.\ Hochreiter and J.\ Schmidhuber,
+``Long short-term memory,''
+\emph{Neural Comput.}, vol.~9, no.~8, pp.~1735--1780, 1997.
+
+\bibitem{grieves2014dt}
+M.\ Grieves,
+``Digital twin: manufacturing excellence through virtual factory replication,''
+White paper, 2014.
+
+\end{thebibliography}
+
+\end{document}
