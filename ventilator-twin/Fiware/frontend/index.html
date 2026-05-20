@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventilator Digital Twin - Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* ──── HUD OVERLAY ──── */
+        .hud-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .hud-panel {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            pointer-events: auto;
+        }
+
+        /* Top-Left: Patient Info */
+        #infoPanel {
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .hud-title {
+            color: #60a5fa;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hud-status-light {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-stable { background: #10b981; }
+        .status-warning { background: #f59e0b; }
+        .status-critical { background: #ef4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .param-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            margin: 4px 0;
+            background: rgba(51, 65, 85, 0.3);
+            border-radius: 6px;
+            border-left: 3px solid #60a5fa;
+        }
+
+        .param-label {
+            color: #94a3b8;
+            font-weight: 600;
+        }
+
+        .param-value {
+            color: #60a5fa;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Top-Right: Controls */
+        #controlPanel {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+        }
+
+        .control-btn {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 4px;
+            background: #1e40af;
+            border: 1px solid #3b82f6;
+            color: #e0f2fe;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all 0.3s;
+            pointer-events: auto;
+        }
+
+        .control-btn:hover {
+            background: #1e3a8a;
+            border-color: #60a5fa;
+            box-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+        }
+
+        .control-btn.active {
+            background: #10b981;
+            border-color: #34d399;
+        }
+
+        /* Bottom-Left: Charts */
+        #chartPanel {
+            bottom: 20px;
+            left: 20px;
+            width: 400px;
+            height: 200px;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 160px;
+        }
+
+        /* Bottom-Right: Alerts */
+        #alertPanel {
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            padding: 10px;
+            margin: 8px 0;
+            border-left: 4px solid;
+            border-radius: 4px;
+            font-size: 11px;
+            background: rgba(51, 65, 85, 0.4);
+        }
+
+        .alert-info {
+            border-color: #3b82f6;
+            color: #93c5fd;
+        }
+
+        .alert-warning {
+            border-color: #f59e0b;
+            color: #fcd34d;
+        }
+
+        .alert-critical {
+            border-color: #ef4444;
+            color: #fca5a5;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(51, 65, 85, 0.2);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #64748b;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* 3D View instructions */
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.7);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <!-- 3D View Container -->
+    <div id="threejs-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></div>
+
+    <!-- HUD Overlays -->
+    <div class="hud-container">
+        <!-- Info Panel -->
+        <div class="hud-panel" id="infoPanel">
+            <div class="hud-title">
+                <span class="hud-status-light status-stable" id="statusLight"></span>
+                Ventilator Twin
+            </div>
+            <div class="param-row">
+                <span class="param-label">Patient ID</span>
+                <span class="param-value" id="val-patient">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">Status</span>
+                <span class="param-value" id="val-status">-</span>
+            </div>
+            <div style="border-top: 1px solid rgba(100, 116, 139, 0.2); margin: 8px 0;"></div>
+            
+            <div style="font-weight: bold; color: #60a5fa; margin-top: 10px; font-size: 11px;">VENTILATOR SETTINGS</div>
+            <div class="param-row">
+                <span class="param-label">PEEP</span>
+                <span class="param-value" id="val-peep">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">FiO₂</span>
+                <span class="param-value" id="val-fio2">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">Tidal Vol</span>
+                <span class="param-value" id="val-tv">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">Resp Rate</span>
+                <span class="param-value" id="val-rr">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">Pressure</span>
+                <span class="param-value" id="val-pressure">-</span>
+            </div>
+
+            <div style="border-top: 1px solid rgba(100, 116, 139, 0.2); margin: 8px 0;"></div>
+            
+            <div style="font-weight: bold; color: #60a5fa; margin-top: 10px; font-size: 11px;">PATIENT VITALS</div>
+            <div class="param-row">
+                <span class="param-label">SpO₂</span>
+                <span class="param-value" id="val-spo2">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">HR</span>
+                <span class="param-value" id="val-hr">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">MAP</span>
+                <span class="param-value" id="val-map">-</span>
+            </div>
+            <div class="param-row">
+                <span class="param-label">Temp</span>
+                <span class="param-value" id="val-temp">-</span>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="hud-panel" id="controlPanel">
+            <div class="hud-title">
+                <i class="fas fa-sliders-h"></i> Controls
+            </div>
+            <button class="control-btn active" onclick="switchView('macro')">Macro View</button>
+            <button class="control-btn" onclick="switchView('micro')">Micro View</button>
+            <br>
+            <button class="control-btn" onclick="toggleSandbox()">Sandbox Mode</button>
+            <button class="control-btn" onclick="requestRecommendation()">Get Recommendation</button>
+            <br>
+            <button class="control-btn" onclick="toggleTheme()">🌙 Dark Mode</button>
+            <button class="control-btn" onclick="resetView()">Reset View</button>
+        </div>
+
+        <!-- Chart Panel -->
+        <div class="hud-panel" id="chartPanel">
+            <div class="hud-title">
+                <i class="fas fa-chart-line"></i> SpO₂ Trend
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Alert Panel -->
+        <div class="hud-panel" id="alertPanel">
+            <div class="hud-title">
+                <i class="fas fa-bell"></i> Alerts
+            </div>
+            <div id="alertsContainer">
+                <div class="alert-item alert-info">System initialized</div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions">
+            🖱️ Drag to rotate | Scroll to zoom | Right-click to pan
+        </div>
+    </div>
+
+    <script>
+        // ──────────────────── THREE.JS SETUP ────────────────────
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a);
+        scene.fog = new THREE.Fog(0x0f172a, 100, 1000);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.5, 3);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowShadowMap;
+        document.getElementById('threejs-container').appendChild(renderer.domElement);
+
+        // ──────────────────── LIGHTING ────────────────────
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(0x60a5fa, 0.5);
+        pointLight.position.set(-3, 2, 3);
+        scene.add(pointLight);
+
+        // ──────────────────── VENTILATOR 3D MODEL ────────────────────
+        const ventilatorGroup = new THREE.Group();
+        scene.add(ventilatorGroup);
+
+        // Main Cabinet
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x1e293b,
+            metalness: 0.4,
+            roughness: 0.7
+        });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), bodyMat);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        ventilatorGroup.add(body);
+
+        // Display Screen
+        const screenMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            emissive: 0x1e40af,
+            emissiveIntensity: 0.5
+        });
+        const screen = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), screenMat);
+        screen.position.set(0, 0.6, 0.3);
+        screen.castShadow = true;
+        ventilatorGroup.add(screen);
+
+        // Control Panel
+        const panelMat = new THREE.MeshStandardMaterial({
+            color: 0x334155,
+            metalness: 0.3
+        });
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.05), panelMat);
+        panel.position.set(0, 0, 0.31);
+        panel.castShadow = true;
+        ventilatorGroup.add(panel);
+
+        // Knobs (3 control knobs)
+        const knobs = [];
+        [-0.25, 0, 0.25].forEach(x => {
+            const knob = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.08, 0.08, 0.05, 32),
+                new THREE.MeshStandardMaterial({
+                    color: 0x60a5fa,
+                    metalness: 0.7,
+                    roughness: 0.3
+                })
+            );
+            knob.position.set(x, -0.15, 0.35);
+            knob.castShadow = true;
+            ventilatorGroup.add(knob);
+            knobs.push(knob);
+        });
+
+        // Breathing Circuit
+        const circuitMat = new THREE.MeshStandardMaterial({
+            color: 0x06b6d4,
+            metalness: 0.5,
+            roughness: 0.4
+        });
+        const circuit = new THREE.Mesh(
+            new THREE.TubeGeometry(
+                new THREE.LineCurve3(
+                    new THREE.Vector3(0.45, 0.3, 0),
+                    new THREE.Vector3(0.7, 0.8, 0)
+                ),
+                8, 0.04, 6
+            ),
+            circuitMat
+        );
+        circuit.castShadow = true;
+        ventilatorGroup.add(circuit);
+
+        // Humidifier Chamber
+        const chamber = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.15, 0.15, 0.3, 32),
+            new THREE.MeshStandardMaterial({
+                color: 0x0ea5e9,
+                metalness: 0.2,
+                roughness: 0.6,
+                transparent: true,
+                opacity: 0.7
+            })
+        );
+        chamber.position.set(0.7, 0.5, 0);
+        chamber.castShadow = true;
+        ventilatorGroup.add(chamber);
+
+        // Water Level
+        const water = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.12, 0.12, 0.1, 32),
+            new THREE.MeshStandardMaterial({
+                color: 0x3b82f6,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.8
+            })
+        );
+        water.position.set(0.7, 0.35, 0);
+        ventilatorGroup.add(water);
+
+        // Outlet Tube
+        const outlet = new THREE.Mesh(
+            new THREE.TubeGeometry(
+                new THREE.LineCurve3(
+                    new THREE.Vector3(0.7, 0.65, 0),
+                    new THREE.Vector3(1.0, 1.2, 0.2)
+                ),
+                8, 0.035, 6
+            ),
+            circuitMat
+        );
+        outlet.castShadow = true;
+        ventilatorGroup.add(outlet);
+
+        // Platform
+        const base = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 0.05, 1.2),
+            new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                metalness: 0.3
+            })
+        );
+        base.position.y = -0.95;
+        base.receiveShadow = true;
+        ventilatorGroup.add(base);
+
+        // ──────────────────── STATE MANAGEMENT ────────────────────
+        let appState = {
+            patient_id: 123,
+            peep: 5.0,
+            fio2: 40.0,
+            tidal_vol: 450.0,
+            resp_rate: 12,
+            pressure: 15.0,
+            spo2: 98.0,
+            hr: 80,
+            map: 75,
+            temperature: 36.8,
+            status: "stable",
+            animationPhase: 0
+        };
+
+        let spo2History = [];
+        let chart = null;
+
+        // ──────────────────── API INTEGRATION ────────────────────
+        const RELAY_API = "http://localhost:5050";
+
+        async function fetchState() {
+            try {
+                const response = await fetch(`${RELAY_API}/twin?patient_id=${appState.patient_id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    appState = { ...appState, ...data };
+                    updateUI();
+                    recordHistory();
+                    checkAlerts();
+                }
+            } catch (error) {
+                console.warn("API error, using demo mode:", error);
+            }
+        }
+
+        function recordHistory() {
+            spo2History.push({
+                spo2: appState.spo2,
+                timestamp: new Date()
+            });
+            if (spo2History.length > 50) {
+                spo2History.shift();
+            }
+            updateChart();
+        }
+
+        function checkAlerts() {
+            const alerts = [];
+            
+            if (appState.peep > 15) alerts.push({
+                type: 'warning',
+                message: `⚠️ High PEEP (${appState.peep.toFixed(1)} cmH₂O)`
+            });
+            
+            if (appState.fio2 > 80) alerts.push({
+                type: 'warning',
+                message: `⚠️ High FiO₂ (${appState.fio2.toFixed(0)}%)`
+            });
+            
+            if (appState.tidal_vol > 700) alerts.push({
+                type: 'critical',
+                message: `🚨 Critical Tidal Volume (${appState.tidal_vol.toFixed(0)} mL)`
+            });
+            
+            if (appState.spo2 < 90) alerts.push({
+                type: 'critical',
+                message: `🚨 Low SpO₂ (${appState.spo2.toFixed(1)}%)`
+            });
+
+            displayAlerts(alerts);
+        }
+
+        // ──────────────────── UI UPDATES ────────────────────
+        function updateUI() {
+            document.getElementById('val-patient').textContent = appState.patient_id;
+            document.getElementById('val-status').textContent = appState.status.toUpperCase();
+            document.getElementById('val-peep').textContent = appState.peep.toFixed(1) + ' cmH₂O';
+            document.getElementById('val-fio2').textContent = appState.fio2.toFixed(0) + '%';
+            document.getElementById('val-tv').textContent = appState.tidal_vol.toFixed(0) + ' mL';
+            document.getElementById('val-rr').textContent = appState.resp_rate + ' bpm';
+            document.getElementById('val-pressure').textContent = appState.pressure.toFixed(1) + ' cmH₂O';
+            document.getElementById('val-spo2').textContent = appState.spo2.toFixed(1) + '%';
+            document.getElementById('val-hr').textContent = appState.hr.toFixed(0) + ' bpm';
+            document.getElementById('val-map').textContent = appState.map.toFixed(0) + ' mmHg';
+            document.getElementById('val-temp').textContent = appState.temperature.toFixed(1) + '°C';
+
+            // Update status light
+            const statusLight = document.getElementById('statusLight');
+            statusLight.className = 'hud-status-light status-' + appState.status;
+
+            // Update screen color based on risk
+            if (appState.tidal_vol > 700 || appState.peep > 18) {
+                screenMat.emissive.setHex(0xef4444);
+            } else if (appState.tidal_vol > 600 || appState.peep > 15) {
+                screenMat.emissive.setHex(0xf59e0b);
+            } else if (appState.spo2 < 92) {
+                screenMat.emissive.setHex(0xeab308);
+            } else {
+                screenMat.emissive.setHex(0x1e40af);
+            }
+        }
+
+        function displayAlerts(alerts) {
+            const container = document.getElementById('alertsContainer');
+            container.innerHTML = '';
+            
+            if (alerts.length === 0) {
+                container.innerHTML = '<div class="alert-item alert-info">✓ All systems normal</div>';
+            } else {
+                alerts.forEach(alert => {
+                    const div = document.createElement('div');
+                    div.className = `alert-item alert-${alert.type}`;
+                    div.textContent = alert.message;
+                    container.appendChild(div);
+                });
+            }
+        }
+
+        // ──────────────────── CHART ────────────────────
+        function initChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'SpO₂ (%)',
+                        data: [],
+                        borderColor: '#60a5fa',
+                        backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        spanGaps: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            min: 85,
+                            max: 100,
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(100, 116, 139, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!chart) return;
+            chart.data.labels = spo2History.map((_, i) => i);
+            chart.data.datasets[0].data = spo2History.map(h => h.spo2);
+            chart.update('none');
+        }
+
+        // ──────────────────── ANIMATION LOOP ────────────────────
+        function animate() {
+            requestAnimationFrame(animate);
+
+            appState.animationPhase++;
+
+            // Breathing animation
+            const breatheCycle = (Math.sin(appState.animationPhase * appState.resp_rate * 0.01) + 1) / 2;
+            body.scale.y = 1 - breatheCycle * 0.15;
+
+            // Knob rotations
+            knobs[0].rotation.z = (appState.peep - 3) / 17 * Math.PI * 2;
+            knobs[1].rotation.z = (appState.fio2 - 21) / 79 * Math.PI * 2;
+            knobs[2].rotation.z = (appState.tidal_vol - 200) / 600 * Math.PI * 2;
+
+            // Water level animation
+            water.scale.y = 0.8 + breatheCycle * 0.4;
+
+            // Camera orbit
+            camera.position.x = Math.sin(appState.animationPhase * 0.0003) * 3;
+            camera.position.z = 3 + Math.cos(appState.animationPhase * 0.0003) * 0.5;
+            camera.lookAt(0, 0.5, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        // ──────────────────── CONTROLS ────────────────────
+        function switchView(view) {
+            console.log("Switched to " + view + " view");
+        }
+
+        function toggleSandbox() {
+            console.log("Sandbox mode toggled");
+        }
+
+        function requestRecommendation() {
+            alert("Fetching PPO recommendations...");
+        }
+
+        function toggleTheme() {
+            console.log("Theme toggled");
+        }
+
+        function resetView() {
+            camera.position.set(0, 1.5, 3);
+        }
+
+        // ──────────────────── INITIALIZATION ────────────────────
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        initChart();
+        updateUI();
+        animate();
+
+        // Fetch data every 500ms
+        setInterval(fetchState, 500);
+
+        // Initial fetch
+        fetchState();
+
+        console.log("✓ Ventilator Digital Twin initialized");
+        console.log("Relay API:", RELAY_API);
+    </script>
+</body>
+</html>

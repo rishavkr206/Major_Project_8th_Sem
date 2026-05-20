@@ -10,6 +10,8 @@ These ventilators control key factors including airflow, airway pressure, and ox
 
 One of the primary difficulties in ventilator management is achieving proper coordination between the patient’s spontaneous breathing efforts and the machine’s assistance. This problem, referred to as patient–ventilator asynchrony, arises when the ventilator does not align correctly with the patient’s breathing pattern.
 
+In practical ICU use, ventilator management is not just about changing one number at a time. Clinicians continuously balance oxygenation, ventilation, pressure safety, lung protection, and patient effort. A good ventilator support system must therefore treat settings such as PEEP, FiO₂, and tidal volume as part of a closed-loop control problem, not as isolated knobs.
+
 ### 1.2 Problem Statement
 Current ventilator management systems face several limitations:
 - Dependence on manual adjustments by clinicians
@@ -27,6 +29,14 @@ The primary objective is to develop a Blockchain-Enabled Digital Twin Framework 
 - Implement LSTM-based prediction
 - Apply PPO-based reinforcement learning optimization
 - Ensure secure storage using blockchain
+
+#### Ventilator Control Goal
+The ventilator subsystem should recommend safer and more adaptive adjustments for:
+- **PEEP**: improve alveolar recruitment while avoiding overdistension
+- **FiO₂**: maintain oxygenation without prolonged hyperoxia
+- **Tidal Volume**: preserve lung protection and reduce VILI risk
+
+The design goal is clinician-in-the-loop decision support, not autonomous ventilator actuation.
 
 ### 1.4 Proposed Solution
 The proposed system integrates:
@@ -107,6 +117,32 @@ The proposed system is a modular architecture integrating:
 
 ### Components
 
+#### Ventilator Control Subsystem
+This is the core clinical loop of the project. It takes recent patient telemetry and current ventilator settings, then produces a bounded recommendation for the next best settings.
+
+**Inputs**
+- SpO₂
+- Heart Rate (HR)
+- Mean Arterial Pressure (MAP)
+- Respiratory Rate (RR)
+- PEEP
+- FiO₂
+- Tidal Volume
+
+**Outputs**
+- Predicted next-step SpO₂ trend
+- Hypoxia / instability risk flags
+- Proposed ventilator adjustment
+- Safety-clamped applied settings
+- Audit trail for the recommendation event
+
+**Control Logic**
+1. Observe the latest vitals and ventilator state.
+2. Forecast near-future deterioration with the LSTM model.
+3. Simulate the proposed adjustment in the Digital Twin.
+4. Reject or clamp unsafe settings.
+5. Present the recommendation to the clinician with rationale and confidence.
+
 #### Dataset Module
 Uses ventilator datasets containing:
 - SpO₂
@@ -129,6 +165,8 @@ Optimizes ventilator settings using reinforcement learning.
 
 #### Digital Twin Simulation Module
 Simulates patient response virtually.
+
+It acts as a physiological safety gate before any recommendation is shown. If the proposed change pushes the patient toward hypoxia, excessive tidal volume, or unstable recovery, the twin can reduce confidence, clamp the proposal, or raise a risk flag.
 
 #### Blockchain Module
 Provides:
@@ -188,6 +226,14 @@ Displays:
 8. Display optimized settings
 9. Improve model using feedback
 
+### Ventilator Recommendation Loop
+The recommendation loop is intentionally conservative:
+- Start from the current ventilator state.
+- Propose only small clinically meaningful deltas.
+- Enforce hard bounds before any output is returned.
+- Escalate to a warning state when risk crosses the configured thresholds.
+- Keep the final adjustment under clinician approval.
+
 ## 3.5 Mathematics Behind Reward Function
 
 ### Reward Equation
@@ -243,6 +289,15 @@ PPO optimization includes:
 | PEEP | 5–12 cmH2O | <3 or >20 |
 | FiO₂ | 21–60% | >80% |
 | Tidal Volume | 6–8 ml/kg | <4 or >10 ml/kg |
+
+### Recommended Safety Envelope for the Prototype
+
+The prototype should not recommend ventilator changes outside the following hard limits:
+- PEEP: 3 to 20 cmH2O
+- FiO₂: 21 to 100%
+- Tidal Volume: 200 to 800 mL
+
+Any out-of-range proposal should be clamped and flagged as a safety event before display.
 
 ---
 

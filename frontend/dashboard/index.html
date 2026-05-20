@@ -29,7 +29,7 @@
 <body class="h-screen flex flex-col overflow-hidden">
 
     <!-- Navbar -->
-    <nav class="glass-panel m-4 p-4 flex justify-between items-center z-10 relative">
+    <nav class="glass-panel m-4 p-4 flex justify-between items-center z-10 relative mb-0">
         <div class="flex items-center space-x-3">
             <i class="fas fa-lungs text-blue-400 text-2xl"></i>
             <div>
@@ -52,6 +52,25 @@
             </div>
         </div>
     </nav>
+
+    <!-- Tab Navigation -->
+    <div class="glass-panel mx-4 px-4 py-2 flex items-center space-x-1 z-10 relative border-t-0">
+        <a href="index.html" class="px-4 py-2 rounded text-sm font-medium text-slate-300 hover:text-blue-400 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+            <i class="fas fa-gauge-high"></i> <span>Dashboard</span>
+        </a>
+        <a href="3d-view.html" class="px-4 py-2 rounded text-sm font-medium text-slate-300 hover:text-blue-400 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+            <i class="fas fa-cube"></i> <span>3D View</span>
+        </a>
+        <a href="models.html" class="px-4 py-2 rounded text-sm font-medium text-slate-300 hover:text-blue-400 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+            <i class="fas fa-chart-simple"></i> <span>Model Metrics</span>
+        </a>
+        <a href="tests.html" class="px-4 py-2 rounded text-sm font-medium text-slate-300 hover:text-blue-400 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+            <i class="fas fa-flask-vial"></i> <span>Test Cases</span>
+        </a>
+        <a href="audit.html" class="px-4 py-2 rounded text-sm font-medium text-slate-300 hover:text-blue-400 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+            <i class="fas fa-link"></i> <span>Audit</span>
+        </a>
+    </div>
 
     <!-- Main Content Grid -->
     <main class="flex-1 overflow-y-auto px-4 pb-4">
@@ -207,7 +226,7 @@
                 </div>
             </div>
 
-            <!-- Right Column: AI Co-Pilot & Audit -->
+            <!-- Right Column: Recommendation & Audit -->
             <div class="col-span-4 flex flex-col space-y-4 h-full">
                 
                 <!-- Recommendation Engine -->
@@ -218,7 +237,7 @@
                     
                     <div class="flex justify-between items-center mb-4 relative z-10">
                         <h2 class="text-lg font-bold text-white flex items-center">
-                            <i class="fas fa-robot text-blue-400 mr-2"></i> AI Co-Pilot
+                            <i class="fas fa-robot text-blue-400 mr-2"></i> Recommendation Engine
                         </h2>
                         <div class="flex flex-col items-end gap-1 text-right">
                             <span id="ai-status" class="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full"><i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing...</span>
@@ -246,6 +265,32 @@
                         </div>
                         <p id="lstm-artifact-line" class="text-[10px] text-slate-500 font-mono truncate border-t border-slate-700/60 pt-2 mt-2"></p>
                         <p id="lstm-hint" class="text-xs text-slate-400 mt-1 leading-snug"></p>
+                    </div>
+
+                    <div id="twin-visibility-panel" class="relative z-10 mb-3 rounded-xl border border-purple-500/40 bg-slate-950/75 p-3 shadow-lg shadow-purple-900/20">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i class="fas fa-wave-square text-purple-300"></i>
+                                Digital Twin projection
+                            </h3>
+                            <span id="twin-live-chip" class="text-xs font-mono px-2 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-600 shrink-0">Awaiting simulation…</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-900/90 rounded-lg p-3 border border-slate-700">
+                                <div class="text-[11px] text-slate-500 uppercase font-medium mb-1">Projected mean SpO₂</div>
+                                <div id="twin-live-mean" class="text-2xl font-mono font-bold text-fuchsia-300">--</div>
+                            </div>
+                            <div class="bg-slate-900/90 rounded-lg p-3 border border-slate-700">
+                                <div class="text-[11px] text-slate-500 uppercase font-medium mb-1">Projected Δ SpO₂</div>
+                                <div id="twin-live-delta" class="text-2xl font-mono font-bold text-slate-300">--</div>
+                            </div>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <span id="twin-live-risk" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">risk: —</span>
+                            <span id="twin-live-tv-risk" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">tv_risk: —</span>
+                            <span id="twin-live-unc" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">uncertainty: —</span>
+                        </div>
+                        <p id="twin-live-hint" class="text-xs text-slate-400 mt-2 leading-snug">Twin simulation will appear here as soon as recommendation data is fetched.</p>
                     </div>
 
                     <div id="rec-container" class="space-y-4 hidden relative z-10">
@@ -322,7 +367,7 @@
     </main>
 
     <script>
-        const API_BASE = "http://localhost:8000";
+        const API_BASE = "http://localhost:8001";
         let mainChart = null;
         let twinChart = null;
         let currentPatientData = null;
@@ -333,6 +378,84 @@
         function setLstmPanelPlaceholder() {
             document.getElementById('lstm-val-pred-spo2').textContent = '--';
             document.getElementById('lstm-val-hypoxia').textContent = '--';
+        }
+
+        function setTwinProjectionPlaceholder() {
+            document.getElementById('twin-live-mean').textContent = '--';
+            document.getElementById('twin-live-delta').textContent = '--';
+            document.getElementById('twin-live-chip').textContent = 'Awaiting simulation…';
+            document.getElementById('twin-live-chip').className =
+                'text-xs font-mono px-2 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-600 shrink-0';
+            document.getElementById('twin-live-risk').textContent = 'risk: —';
+            document.getElementById('twin-live-risk').className =
+                'px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700';
+            document.getElementById('twin-live-tv-risk').textContent = 'tv_risk: —';
+            document.getElementById('twin-live-tv-risk').className =
+                'px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700';
+            document.getElementById('twin-live-unc').textContent = 'uncertainty: —';
+            document.getElementById('twin-live-hint').textContent =
+                'Twin simulation will appear here as soon as recommendation data is fetched.';
+        }
+
+        function setTwinBadge(el, label, on) {
+            el.textContent = `${label}: ${on ? 'YES' : 'no'}`;
+            el.className =
+                'px-2 py-0.5 rounded text-[10px] font-semibold border ' +
+                (on
+                    ? 'bg-red-600/30 text-red-200 border-red-500/50'
+                    : 'bg-slate-800 text-slate-400 border-slate-700');
+        }
+
+        function renderTwinProjection(twinSimulation) {
+            const chip = document.getElementById('twin-live-chip');
+            const meanEl = document.getElementById('twin-live-mean');
+            const deltaEl = document.getElementById('twin-live-delta');
+            const riskEl = document.getElementById('twin-live-risk');
+            const tvRiskEl = document.getElementById('twin-live-tv-risk');
+            const uncEl = document.getElementById('twin-live-unc');
+            const hintEl = document.getElementById('twin-live-hint');
+
+            if (!twinSimulation || !twinSimulation.trajectory) {
+                setTwinProjectionPlaceholder();
+                return;
+            }
+
+            const meanSpO2 = twinSimulation.mean_spo2;
+            const deltaSpO2 = twinSimulation.delta_spo2;
+            const uncertainty = twinSimulation.uncertainty;
+
+            meanEl.textContent = meanSpO2 != null ? Number(meanSpO2).toFixed(2) : '--';
+            if (deltaSpO2 == null) {
+                deltaEl.textContent = '--';
+                deltaEl.className = 'text-2xl font-mono font-bold text-slate-300';
+            } else if (deltaSpO2 > 0) {
+                deltaEl.textContent = '+' + Number(deltaSpO2).toFixed(2);
+                deltaEl.className = 'text-2xl font-mono font-bold text-emerald-400';
+            } else if (deltaSpO2 < 0) {
+                deltaEl.textContent = Number(deltaSpO2).toFixed(2);
+                deltaEl.className = 'text-2xl font-mono font-bold text-red-400';
+            } else {
+                deltaEl.textContent = '0.00';
+                deltaEl.className = 'text-2xl font-mono font-bold text-slate-300';
+            }
+
+            uncEl.textContent = uncertainty != null
+                ? `uncertainty: ±${Number(uncertainty).toFixed(2)}`
+                : 'uncertainty: —';
+
+            setTwinBadge(riskEl, 'risk', !!twinSimulation.risk_flag);
+            setTwinBadge(tvRiskEl, 'tv_risk', !!twinSimulation.tv_risk);
+
+            const modeText = twinSimulation.risk_flag ? 'Twin projects elevated risk' : 'Twin projects stable trajectory';
+            chip.textContent = modeText;
+            chip.className =
+                'text-xs font-mono px-2 py-1 rounded-md border shrink-0 ' +
+                (twinSimulation.risk_flag
+                    ? 'bg-red-600/30 text-red-200 border-red-500/50'
+                    : 'bg-emerald-600/30 text-emerald-100 border-emerald-500/50');
+
+            hintEl.textContent =
+                'These values come from the API digital twin simulation for the current recommended ventilator settings.';
         }
 
         async function refreshLstmStatusFromHealth() {
@@ -358,6 +481,7 @@
         // Initialize App
         async function init() {
             setLstmPanelPlaceholder();
+            setTwinProjectionPlaceholder();
             await refreshLstmStatusFromHealth();
             await fetchPatients();
             initChart();
@@ -439,6 +563,7 @@
             document.getElementById('ai-status').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i> Analyzing...';
             document.getElementById('ai-status').className = 'text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full';
             setLstmPanelPlaceholder();
+            setTwinProjectionPlaceholder();
             
             ['spo2', 'hr', 'map', 'rr'].forEach(id => {
                document.getElementById(`val-${id}`).innerText = '--';
@@ -488,6 +613,7 @@
                 const data = await res.json();
                 currentRecommendation = data;
                 renderRecommendation(data);
+                renderTwinProjection(data.twin_simulation);
                 
                 // Add twin simulation to chart
                 if(data.twin_simulation && data.twin_simulation.trajectory) {
@@ -912,15 +1038,8 @@
 
             const riskEl   = document.getElementById('twin-risk');
             const tvRiskEl = document.getElementById('twin-tvrisk');
-            const setBadge = (el, label, on) => {
-                el.textContent = `${label}: ${on ? 'YES' : 'no'}`;
-                el.className = 'px-2 py-0.5 rounded text-[10px] font-semibold border ' +
-                    (on
-                        ? 'bg-red-600/30 text-red-200 border-red-500/50'
-                        : 'bg-slate-800 text-slate-400 border-slate-700');
-            };
-            setBadge(riskEl,   'risk',    !!result.risk_flag);
-            setBadge(tvRiskEl, 'tv_risk', !!result.tv_risk);
+            setTwinBadge(riskEl, 'risk', !!result.risk_flag);
+            setTwinBadge(tvRiskEl, 'tv_risk', !!result.tv_risk);
 
             // Detect clamp activation by comparing proposed vs applied
             const clampWarn = document.getElementById('twin-clamp-warn');

@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
+from functools import lru_cache
 import sqlite3
 import pandas as pd
 import json
@@ -21,6 +23,7 @@ from services.lstm_inference import get_lstm_forecaster
 from services.multi_risk_inference import MultiRiskInferenceEngine
 from services.prometheus_metrics import metrics_response, record_recommendation_metrics
 from services.chain_anchor import anchor_now
+from tests.test_scenarios import run_all_scenarios, results_to_dict
 
 app = FastAPI(title="Ventilator Digital Twin API")
 
@@ -45,6 +48,18 @@ PATIENT_CSV_PATH: str | None = None
 patient_stream_cursors = {}
 df_index = None
 simulator_registry: Dict[str, VentilatorDataSimulator] = {}
+
+
+def _read_json_if_exists(path: str) -> Dict[str, Any]:
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@lru_cache(maxsize=1)
+def _cached_scenario_results() -> Dict[str, Any]:
+    return results_to_dict(run_all_scenarios())
 
 
 def _ensure_patient_timeseries_csv(repo_root: str) -> str | None:
@@ -98,6 +113,12 @@ async def startup_event():
     
     # Note: Multi-risk LSTM engine is loaded lazily on first request to avoid blocking server startup
     print("[STARTUP] Server ready. Multi-risk LSTM will load on first prediction request.")
+
+    # Mount frontend dashboard static files (index.html, 3d-view.html, models.html, etc.)
+    dashboard_path = os.path.join(REPO_ROOT, "frontend", "dashboard")
+    if os.path.isdir(dashboard_path):
+        app.mount("/app", StaticFiles(directory=dashboard_path, html=True), name="dashboard")
+        print(f"[STARTUP] Dashboard mounted at /app: {dashboard_path}")
 
 # --- Endpoints ---
 
@@ -542,6 +563,49 @@ async def predict_clinical_risks(stay_id: int, payload: Dict[str, Any]):
             status_code=400,
             detail=f"Error predicting risks: {str(e)}"
         ) from e
+
+
+@app.get("/tests/run-scenarios")
+async def run_scenarios(refresh: bool = False):
+    """
+    Dashboard endpoint for the Test Lab page.
+    Returns deterministic scenario groups used by the frontend charts and tables.
+    """
+    if refresh:
+        _cached_scenario_results.cache_clear()
+    return {
+        "results": _cached_scenario_results(),
+        "source": "scenario_suite",
+        "cached": not refresh,
+    }
+
+
+@app.get("/model/evaluation")
+async def model_evaluation():
+    """
+    Dashboard endpoint for model metrics cards/charts.
+    Reads evaluation artifacts from reports/*.json when available.
+    """
+    reports_dir = os.path.join(REPO_ROOT, "reports")
+    dual_head = _read_json_if_exists(os.path.join(reports_dir, "model_evaluation_lstm.json"))
+    multi_risk = _read_json_if_exists(os.path.join(reports_dir, "model_evaluation_multi_risk.json"))
+    return {
+        "reports": {
+            "lstm_dual_head": dual_head,
+            "multi_risk_lstm": multi_risk,
+        },
+        "source": "reports_json",
+    }
+
+
+@app.get("/fiware/status")
+async def fiware_status():
+    """Return FIWARE integration status for the audit/system page."""
+    return {
+        "enabled": False,
+        "base_url": os.getenv("FIWARE_BASE_URL", ""),
+        "health": {"reachable": False, "message": "FIWARE adapter not configured in this run"},
+    }
 
 
 @app.post("/patient/{stay_id}/audit")

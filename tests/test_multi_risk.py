@@ -8,6 +8,7 @@ import sys
 import json
 import numpy as np
 import pandas as pd
+import pytest
 from typing import Dict, Any
 
 # Add repo root to path
@@ -51,7 +52,7 @@ def test_inference_engine():
     # Try to load
     if not engine.load():
         print("[SKIP] Model not trained yet. Run ml/multi_risk_training.py first.")
-        return False
+        pytest.skip("Multi-risk model not trained yet")
     
     print("[✓] Engine loaded successfully")
     
@@ -70,10 +71,8 @@ def test_inference_engine():
         print(f"    VILI_Risk: {results['VILI_Risk']['probability']:.4f}")
         
         print("\n[✓] Inference engine tests passed")
-        return True
     except Exception as e:
-        print(f"[✗] Inference failed: {e}")
-        return False
+        pytest.fail(f"Inference failed: {e}")
 
 
 def test_api_integration():
@@ -86,7 +85,7 @@ def test_api_integration():
         import requests
     except ImportError:
         print("[SKIP] requests library not installed. Install with: pip install requests")
-        return None
+        pytest.skip("requests library not installed")
     
     # Try to reach API
     api_url = "http://127.0.0.1:9000"
@@ -96,7 +95,7 @@ def test_api_integration():
     except Exception as e:
         print(f"[SKIP] API server not running at {api_url}")
         print(f"       Start with: python -m uvicorn api.main:app --host 127.0.0.1 --port 9000")
-        return None
+        pytest.skip(f"API server not running at {api_url}")
     
     # Test /patient/{stay_id}/risks endpoint with synthetic data
     print("\n  Testing /patient/30004018/risks endpoint...")
@@ -128,14 +127,10 @@ def test_api_integration():
             print(f"    Response keys: {list(result.keys())}")
             if "summary" in result:
                 print(f"    High-risk flags: {result['summary'].get('high_risk_flags', [])}")
-            return True
         else:
-            print(f"[✗] Request failed (status={resp.status_code})")
-            print(f"    Message: {resp.text}")
-            return False
+            pytest.fail(f"Request failed (status={resp.status_code}): {resp.text}")
     except Exception as e:
-        print(f"[✗] Request failed: {e}")
-        return False
+        pytest.fail(f"Request failed: {e}")
 
 
 def test_evaluation_report():
@@ -149,7 +144,7 @@ def test_evaluation_report():
     if not os.path.exists(report_path):
         print(f"[SKIP] Evaluation report not found at {report_path}")
         print("       This will be generated after model training completes.")
-        return None
+        pytest.skip("Evaluation report not generated yet")
     
     with open(report_path, 'r') as fh:
         results = json.load(fh)
@@ -167,8 +162,7 @@ def test_evaluation_report():
         f1 = results.get(f'{target}_f1_optimal', 'N/A')
         thresh = results.get(f'{target}_optimal_threshold', 'N/A')
         print(f"    {target:18s}: AUROC={auroc:8}, F1_opt={f1:8} @ thresh={thresh}")
-    
-    return True
+
 
 
 def main():

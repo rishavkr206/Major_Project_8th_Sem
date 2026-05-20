@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # ──────────────────── FIWARE CONTEXT BROKER (Optional) ────────────────────
+  orion:
+    image: fiware/orion:latest
+    container_name: fiware-orion
+    ports:
+      - "1026:1026"
+    environment:
+      - ORION_MONGO_URL=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    healthcheck:
+      test: curl -f http://localhost:1026/version || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mongo:
+    image: mongo:4.4
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin
+
+  # ──────────────────── FLASK RELAY SERVER ────────────────────
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.relay
+    container_name: ventilator-relay
+    ports:
+      - "5050:5050"
+    environment:
+      - DIGITAL_TWIN_API=http://host.docker.internal:8000
+      - DEMO_MODE=True
+    volumes:
+      - ./Fiware/backend:/app
+    depends_on:
+      - orion
+
+  # ──────────────────── FRONTEND SERVER ────────────────────
+  frontend:
+    image: python:3.11-slim
+    container_name: ventilator-frontend
+    working_dir: /app
+    command: python -m http.server 8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Fiware/frontend:/app
+    environment:
+      - RELAY_API=http://localhost:5050
+
+volumes:
+  mongo_data:
+
+networks:
+  default:
+    name: ventilator-twin
+    driver: bridge

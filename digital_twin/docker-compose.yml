@@ -1,0 +1,38 @@
+version: '3.8'
+services:
+  mongo:
+    image: mongo:4.4
+    container_name: dt_mongo
+    ports:
+      - '27017:27017'
+
+  orion:
+    image: fiware/orion:2.10.0
+    container_name: dt_orion
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_HOST=mongo
+    ports:
+      - '1026:1026'
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: dt_mosquitto
+    ports:
+      - '1883:1883'
+      - '9001:9001'
+
+  backend:
+    build: ./backend
+    container_name: dt_backend
+    depends_on:
+      - orion
+      - mosquitto
+    environment:
+      - ORION_URL=http://orion:1026/v2
+      - MQTT_BROKER=mosquitto
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./frontend:/app/frontend:ro

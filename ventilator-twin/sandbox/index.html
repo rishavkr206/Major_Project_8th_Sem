@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventilator Digital Twin - Sandbox</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e0f2fe;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ──── 3D CANVAS ──── */
+        #canvas {
+            flex: 1;
+            background: linear-gradient(to bottom, #1a1f3a, #0f172a);
+        }
+
+        /* ──── CONTROL PANEL ──── */
+        .control-panel {
+            width: 380px;
+            background: rgba(15, 23, 42, 0.95);
+            border-left: 2px solid rgba(96, 165, 250, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px;
+            background: linear-gradient(to right, #1e40af, #1e3a8a);
+            border-bottom: 1px solid rgba(96, 165, 250, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel-header h2 {
+            font-size: 14px;
+            font-weight: bold;
+            color: #e0f2fe;
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .control-section {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(96, 165, 250, 0.2);
+        }
+
+        .section-title {
+            color: #60a5fa;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-group {
+            margin-bottom: 12px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 11px;
+            color: #cbd5e1;
+        }
+
+        .slider-label .value {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(to right, #3b82f6, #06b6d4);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #60a5fa;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(96, 165, 250, 0.5);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #60a5fa;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 5px rgba(96, 165, 250, 0.5);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px 12px;
+            background: #1e40af;
+            border: 1px solid #3b82f6;
+            color: #e0f2fe;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+
+        button:hover {
+            background: #1e3a8a;
+            border-color: #60a5fa;
+            box-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+        }
+
+        button.danger {
+            background: #b91c1c;
+            border-color: #ef4444;
+        }
+
+        button.danger:hover {
+            background: #991b1b;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+        }
+
+        button.success {
+            background: #047857;
+            border-color: #10b981;
+        }
+
+        button.success:hover {
+            background: #065f46;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+        }
+
+        /* Alert Display */
+        .alert {
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-size: 10px;
+            border-left: 3px solid;
+        }
+
+        .alert.info {
+            background: rgba(3, 102, 214, 0.1);
+            border-color: #0366d6;
+            color: #79c0ff;
+        }
+
+        .alert.warning {
+            background: rgba(255, 158, 11, 0.1);
+            border-color: #f59e0b;
+            color: #fcd34d;
+        }
+
+        .alert.critical {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: #ef4444;
+            color: #fca5a5;
+        }
+
+        /* Terminal Console */
+        #terminal {
+            background: #000;
+            border: 1px solid #60a5fa;
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 9px;
+            font-family: 'Courier New', monospace;
+            max-height: 150px;
+            overflow-y: auto;
+            color: #0f0;
+            margin-top: 10px;
+        }
+
+        .terminal-line {
+            margin: 2px 0;
+        }
+
+        .terminal-prompt {
+            color: #0f0;
+        }
+
+        .terminal-output {
+            color: #0f0;
+        }
+
+        .terminal-error {
+            color: #f00;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(51, 65, 85, 0.2);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #64748b;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .info-badge {
+            display: inline-block;
+            background: rgba(96, 165, 250, 0.2);
+            border: 1px solid #60a5fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            color: #93c5fd;
+            margin-left: 4px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="control-panel">
+        <div class="panel-header">
+            <i class="fas fa-sliders-h"></i>
+            <h2>Sandbox Control Panel</h2>
+            <span class="info-badge" id="sandboxStatus">ISOLATED</span>
+        </div>
+
+        <div class="panel-body">
+            <!-- Ventilator Controls -->
+            <div class="control-section">
+                <div class="section-title">
+                    <i class="fas fa-lung"></i> Ventilator Settings
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>PEEP (cmH₂O)</span>
+                        <span class="value" id="val-peep">5.0</span>
+                    </div>
+                    <input type="range" id="slider-peep" min="3" max="20" step="0.5" value="5">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>FiO₂ (%)</span>
+                        <span class="value" id="val-fio2">40</span>
+                    </div>
+                    <input type="range" id="slider-fio2" min="21" max="100" step="1" value="40">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Tidal Volume (mL)</span>
+                        <span class="value" id="val-tidalVol">450</span>
+                    </div>
+                    <input type="range" id="slider-tidalVol" min="200" max="800" step="10" value="450">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Resp Rate (bpm)</span>
+                        <span class="value" id="val-respRate">12</span>
+                    </div>
+                    <input type="range" id="slider-respRate" min="6" max="40" step="1" value="12">
+                </div>
+            </div>
+
+            <!-- Environment Controls -->
+            <div class="control-section">
+                <div class="section-title">
+                    <i class="fas fa-temperature-high"></i> Environment
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Temperature (°C)</span>
+                        <span class="value" id="val-temp">36.8</span>
+                    </div>
+                    <input type="range" id="slider-temp" min="15" max="40" step="0.1" value="36.8">
+                </div>
+
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Humidity (%)</span>
+                        <span class="value" id="val-humidity">60</span>
+                    </div>
+                    <input type="range" id="slider-humidity" min="30" max="90" step="1" value="60">
+                </div>
+            </div>
+
+            <!-- Optimization Modes -->
+            <div class="control-section">
+                <div class="section-title">
+                    <i class="fas fa-wand-magic-sparkles"></i> Optimization
+                </div>
+
+                <div class="button-group">
+                    <button onclick="applyMode('safety')">Safety</button>
+                    <button onclick="applyMode('oxygenation')">O₂ First</button>
+                    <button onclick="applyMode('ventilation')">Vent First</button>
+                    <button onclick="applyMode('balanced')">Balanced</button>
+                </div>
+            </div>
+
+            <!-- Alerts -->
+            <div class="control-section">
+                <div class="section-title">
+                    <i class="fas fa-bell"></i> Safety Alerts
+                </div>
+                <div id="alertsContainer"></div>
+            </div>
+
+            <!-- Simulation Control -->
+            <div class="control-section">
+                <div class="section-title">
+                    <i class="fas fa-play"></i> Simulation
+                </div>
+
+                <div class="button-group">
+                    <button class="success" onclick="startSimulation()">▶ Start</button>
+                    <button class="danger" onclick="resetSimulation()">⟲ Reset</button>
+                    <button onclick="syncWithLive()">🔄 Sync Live</button>
+                </div>
+            </div>
+
+            <!-- Terminal Console -->
+            <div class="control-section" style="flex: 1; display: flex; flex-direction: column; border-bottom: none;">
+                <div class="section-title">
+                    <i class="fas fa-terminal"></i> Console
+                </div>
+                <div id="terminal"></div>
+                <input type="text" id="terminalInput" placeholder="Enter command..." 
+                    style="margin-top: 8px; padding: 6px; background: #000; color: #0f0; border: 1px solid #60a5fa; border-radius: 4px; font-family: 'Courier New'; font-size: 10px;" 
+                    onkeypress="if(event.key==='Enter') executeCommand(this.value); this.value='';">
+            </div>
+        </div>
+    </div>
+
+    <script src="core/SandboxState.js"></script>
+    <script src="core/EventBus.js"></script>
+    <script src="core/ParameterEngine.js"></script>
+
+    <script>
+        // ──────────────────── INITIALIZATION ────────────────────
+        const state = new SandboxState();
+        const eventBus = new EventBus();
+        const paramEngine = new ParameterEngine(state, eventBus);
+
+        // ──────────────────── THREE.JS SETUP ────────────────────
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth * 0.6 / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.5, 3);
+
+        const canvas = document.getElementById('canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth * 0.6, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        // ──────────────────── VENTILATOR MODEL (Same as dashboard) ────────────────────
+        const ventilatorGroup = new THREE.Group();
+        scene.add(ventilatorGroup);
+
+        // Main body
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: 0x1e293b,
+            metalness: 0.4,
+            roughness: 0.7
+        });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), bodyMat);
+        body.castShadow = true;
+        ventilatorGroup.add(body);
+
+        // Screen
+        const screenMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            emissive: 0x1e40af,
+            emissiveIntensity: 0.7
+        });
+        const screen = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), screenMat);
+        screen.position.set(0, 0.6, 0.3);
+        ventilatorGroup.add(screen);
+
+        // Knobs
+        const knobs = [];
+        [-0.25, 0, 0.25].forEach(x => {
+            const knob = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.08, 0.08, 0.05, 32),
+                new THREE.MeshStandardMaterial({ color: 0x60a5fa, metalness: 0.7 })
+            );
+            knob.position.set(x, -0.15, 0.35);
+            ventilatorGroup.add(knob);
+            knobs.push(knob);
+        });
+
+        // ──────────────────── SLIDER CONTROLS ────────────────────
+        const sliders = {
+            'slider-peep': (val) => { paramEngine.setParameter('ventilator.peep', parseFloat(val)); updateValues(); },
+            'slider-fio2': (val) => { paramEngine.setParameter('ventilator.fio2', parseFloat(val)); updateValues(); },
+            'slider-tidalVol': (val) => { paramEngine.setParameter('ventilator.tidalVol', parseFloat(val)); updateValues(); },
+            'slider-respRate': (val) => { paramEngine.setParameter('ventilator.respRate', parseInt(val)); updateValues(); },
+            'slider-temp': (val) => { paramEngine.setParameter('environment.temperature', parseFloat(val)); updateValues(); },
+            'slider-humidity': (val) => { paramEngine.setParameter('environment.humidity', parseFloat(val)); updateValues(); }
+        };
+
+        Object.entries(sliders).forEach(([id, handler]) => {
+            document.getElementById(id).addEventListener('input', (e) => handler(e.target.value));
+        });
+
+        function updateValues() {
+            document.getElementById('val-peep').textContent = state.getParameter('ventilator.peep').toFixed(1);
+            document.getElementById('val-fio2').textContent = state.getParameter('ventilator.fio2').toFixed(0);
+            document.getElementById('val-tidalVol').textContent = state.getParameter('ventilator.tidalVol').toFixed(0);
+            document.getElementById('val-respRate').textContent = state.getParameter('ventilator.respRate');
+            document.getElementById('val-temp').textContent = state.getParameter('environment.temperature').toFixed(1);
+            document.getElementById('val-humidity').textContent = state.getParameter('environment.humidity');
+        }
+
+        // ──────────────────── OPTIMIZATION MODES ────────────────────
+        function applyMode(mode) {
+            const results = paramEngine.optimize(mode);
+            updateValues();
+            log(`Optimized for ${mode.toUpperCase()} mode`);
+            displayAlerts();
+        }
+
+        // ──────────────────── SIMULATION CONTROL ────────────────────
+        function startSimulation() {
+            state.setParameter('simulation.isRunning', true);
+            log('Simulation started (SANDBOX MODE - isolated)');
+        }
+
+        function resetSimulation() {
+            state.reset();
+            updateValues();
+            log('Simulation reset to defaults');
+        }
+
+        async function syncWithLive() {
+            try {
+                const response = await fetch('http://localhost:5050/twin?patient_id=123');
+                const data = await response.json();
+                paramEngine.batchSetParameters({
+                    'ventilator.peep': data.peep,
+                    'ventilator.fio2': data.fio2,
+                    'ventilator.tidalVol': data.tidal_vol,
+                    'ventilator.respRate': data.resp_rate
+                });
+                updateValues();
+                log('Synced with live system');
+            } catch (error) {
+                log(`Sync error: ${error.message}`, 'error');
+            }
+        }
+
+        // ──────────────────── ALERTS ────────────────────
+        function displayAlerts() {
+            const alerts = paramEngine.checkSafetyThresholds();
+            const container = document.getElementById('alertsContainer');
+            container.innerHTML = '';
+
+            if (alerts.length === 0) {
+                container.innerHTML = '<div class="alert info">✓ All parameters within safe range</div>';
+            } else {
+                alerts.forEach(alert => {
+                    const div = document.createElement('div');
+                    div.className = `alert ${alert.level === 'critical' ? 'critical' : 'warning'}`;
+                    div.textContent = `${alert.level.toUpperCase()}: ${alert.message}`;
+                    container.appendChild(div);
+                });
+            }
+        }
+
+        // ──────────────────── TERMINAL CONSOLE ────────────────────
+        function log(message, level = 'output') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = `terminal-line terminal-${level}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function executeCommand(cmd) {
+            log(`$ ${cmd}`, 'prompt');
+
+            const parts = cmd.trim().split(' ');
+            const command = parts[0];
+
+            switch(command) {
+                case 'status':
+                    const st = state.getState();
+                    log(`PEEP: ${st.ventilator.peep}, FiO2: ${st.ventilator.fio2}, TV: ${st.ventilator.tidalVol}`);
+                    break;
+                case 'help':
+                    log('Commands: status, reset, optimize [mode], sync, clear');
+                    break;
+                case 'clear':
+                    document.getElementById('terminal').innerHTML = '';
+                    break;
+                case 'optimize':
+                    applyMode(parts[1] || 'balanced');
+                    break;
+                case 'sync':
+                    syncWithLive();
+                    break;
+                default:
+                    log(`Unknown command: ${command}`, 'error');
+            }
+        }
+
+        // ──────────────────── ANIMATION LOOP ────────────────────
+        let animPhase = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+
+            animPhase++;
+
+            // Breathing animation
+            const breatheCycle = (Math.sin(animPhase * state.getParameter('ventilator.respRate') * 0.01) + 1) / 2;
+            body.scale.y = 1 - breatheCycle * 0.15;
+
+            // Knob rotations
+            knobs[0].rotation.z = (state.getParameter('ventilator.peep') - 3) / 17 * Math.PI * 2;
+            knobs[1].rotation.z = (state.getParameter('ventilator.fio2') - 21) / 79 * Math.PI * 2;
+            knobs[2].rotation.z = (state.getParameter('ventilator.tidalVol') - 200) / 600 * Math.PI * 2;
+
+            // Camera orbit
+            camera.position.x = Math.sin(animPhase * 0.0003) * 3;
+            camera.lookAt(0, 0.5, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        // ──────────────────── INITIALIZATION ────────────────────
+        updateValues();
+        displayAlerts();
+        animate();
+        log('✓ Sandbox environment initialized');
+        log('Type "help" for commands');
+
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth * 0.6;
+            camera.aspect = w / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

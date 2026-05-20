@@ -173,6 +173,7 @@ function LivePage() {
   const streamBusyRef = useRef(false);
   const patients = useAsync(api.patients, []);
   const health = useAsync(api.health, []);
+  const connectionError = patients.error || health.error;
 
   useEffect(() => {
     if (!selected && patients.data?.patients?.length) {
@@ -304,6 +305,35 @@ function LivePage() {
           </>
         }
       />
+
+      {connectionError ? (
+        <section className="panel xl">
+          <Empty
+            icon={AlertTriangle}
+            title="API connection failed"
+            text={`Unable to reach ${API_BASE}. Start the backend on port 8001, then click Reconnect.`}
+          />
+          <div className="actions">
+            <Button
+              onClick={async () => {
+                await Promise.all([patients.reload(), health.reload()]);
+              }}
+            >
+              <RefreshCw size={16} /> Reconnect API
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {!connectionError && (patients.data?.patients || []).length === 0 ? (
+        <section className="panel xl">
+          <Empty
+            icon={Database}
+            title="No patients available"
+            text="Patient list is empty. Check /patients in the API and verify dataset loading in /health."
+          />
+        </section>
+      ) : null}
 
       <section className="grid four">
         <Metric label="SpO2" value={`${fmt(latest.SpO2)}%`} tone={Number(latest.SpO2) < 92 ? "danger" : "good"} note="Observed" />

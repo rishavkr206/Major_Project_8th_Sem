@@ -185,6 +185,7 @@ class LSTMForecaster:
             FEATURE_COLS,
             add_derived_features,
             add_lag_features,
+            add_trend_features,
             add_ppo_state_reward_features,
         )
 
@@ -217,6 +218,8 @@ class LSTMForecaster:
         df = add_derived_features(df, verbose=False)
         df = add_ppo_state_reward_features(df, verbose=False)
         df = add_lag_features(df, verbose=False)
+        # Training includes trend features after lag engineering; keep inference aligned.
+        df = add_trend_features(df, verbose=False)
         if len(df) < self._seq_len + 1:
             return None, None
 
@@ -228,8 +231,9 @@ class LSTMForecaster:
             return None, None
 
         f_dim = win.shape[1]
-        flat = win.reshape(1, -1)
-        scaled = self._scaler.transform(flat).reshape(1, self._seq_len, f_dim)
+        # Scaler is fit on per-row feature vectors (n_features), not flattened windows.
+        scaled_win = self._scaler.transform(win)
+        scaled = scaled_win.reshape(1, self._seq_len, f_dim)
         pred_reg_s, pred_cls = self._model.predict(scaled, verbose=0)
         reg_scaled = float(np.asarray(pred_reg_s).reshape(-1)[0])
         hypoxia_prob = float(np.asarray(pred_cls).reshape(-1)[0])
